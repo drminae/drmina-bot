@@ -1,13 +1,13 @@
 const http = require('http');
 
 const VERIFY_TOKEN = 'drmina2024';
-const WA_TOKEN = 'EAAVX8PjEKMoBR8fGR8DIN9rGLNOkcyZAjW4MhuklqlFpjLTiZAwmyODtK2R09LMvLlNU9srnopA64yMZBKIV5FQxGzvrMZBKuMBPm3yZBLrfbPHe1Dwzu64ZB2ZAXCbkKP5r8Hv1qRffZBEipcvAVqj35oWhMS8E5wusJV5Ox9ZBKyYnQIjcn9mf7ZB5NCHeJrm19CD3uWsSllKji0voYAnbT6IqdNOHDeGhhlrabFxLeVjqx8lVTctI18KKzKPAeoboNwntr8IbFrZAMS5ZBhKEoAZDZD';
+const WA_TOKEN = 'EAAVX8PjEKMoBR6zgFoPt8AZCMesSqXlwkVfN4EDUbywGDhhfEI0HWa3pgHEeuBYXRhjQHEUfyN9FMziZCdFB55U1ubuAaRxlnxZCPABCZCMlv5vnqKyTvrTXyej7l0IDPGZAtUrUZBTi7maf2va7poZAoSdttSCzW8ZBTuz6im57oVOSLiSoyX6tDvT07zMYGtBl3o7HELNkQ1VwX3ChrZB93Deatv8nmq48smN2nHTrb2wYrbzClZCO2N2o8dJMIlv8im6SMGb7PLKwj0RdE4YAZDZD';
 const PHONE_NUMBER_ID = '1218801781318747';
 const GOOGLE_REVIEW_LINK = 'https://g.page/r/CUs38k2cmQ1UEBM/review';
 
-const MSG_NEGATIVE = `Thank you for your honest feedback. 🙏\n\nI am truly sorry that your experience did not meet your expectations. This is not the standard of care I strive to provide.\n\n👉 *What specifically made you feel this way, and how can I improve?*\n\nI take every piece of feedback very seriously and personally. I value your trust and truly hope to have the chance to make it right. 💙\n\n— Dr. Mina`;
+const MSG_NEGATIVE = `Thank you for your honest feedback. ðŸ™\n\nI am truly sorry that your experience did not meet your expectations. This is not the standard of care I strive to provide.\n\nðŸ‘‰ *What specifically made you feel this way, and how can I improve?*\n\nI take every piece of feedback very seriously and personally. I value your trust and truly hope to have the chance to make it right. ðŸ’™\n\nâ€” Dr. Mina`;
 
-const MSG_POSITIVE = `Wonderful! Thank you so much! 🌟\n\nI am so happy to hear that you had a great experience! 😊 It truly means the world to me.\n\nIf you have a moment, I would really appreciate it if you could share your kind review — it helps other parents find the best pediatric dentist for their little ones. 🦷\n\n👉 ${GOOGLE_REVIEW_LINK}\n\nIt only takes 1 minute and makes a huge difference. Thank you! 🙏\n\n— Dr. Mina`;
+const MSG_POSITIVE = `Wonderful! Thank you so much! ðŸŒŸ\n\nI am so happy to hear that you had a great experience! ðŸ˜Š It truly means the world to me.\n\nIf you have a moment, I would really appreciate it if you could share your kind review â€” it helps other parents find the best pediatric dentist for their little ones. ðŸ¦·\n\nðŸ‘‰ ${GOOGLE_REVIEW_LINK}\n\nIt only takes 1 minute and makes a huge difference. Thank you! ðŸ™\n\nâ€” Dr. Mina`;
 
 async function sendMessage(to, message) {
   const body = JSON.stringify({
