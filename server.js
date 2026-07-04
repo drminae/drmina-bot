@@ -3,8 +3,8 @@ const fs = require('fs');
 const path = require('path');
 
 const VERIFY_TOKEN = 'drmina2024';
-const WA_TOKEN = 'EAAVX8PjEKMoBRZByywqi8hyGNirNWz07yTz7ZAE3wqL5MK51xx0qnlHWYZB3cBNXWE5K4csxJ5xZCKDGpFcYs4VbAkRcpEsaQLBnEvTsjidC3AbtMGjgIFc1x32Inl4DnzzuIFTEAN2YugN8d0fGj1c22sMqZAYpzR6xLtIpPwrbAoXR0kvIAibe7fUi5QT3F5fSzDo7Ox6kJCDSQqoKZBXl24ZAA43GLYoanI9P5VEbsEJgZAQ3uTi97jZASTPeZCkAe1QtR9FFZAKbcg8ZAgwBMS4x';
-const PHONE_NUMBER_ID = '1218801781318747';
+const WA_TOKEN = process.env.WA_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const GOOGLE_REVIEW_LINK = 'https://g.page/r/CUs38k2cmQ1UEBM/review';
 
 const MSG_NEGATIVE = `Thank you for your honest feedback. 🙏\n\nI am truly sorry that your experience did not meet your expectations. This is not the standard of care I strive to provide.\n\n👉 *What specifically made you feel this way, and how can I improve?*\n\nI take every piece of feedback very seriously and personally. I value your trust and truly hope to have the chance to make it right. 💙\n\n— Dr. Mina`;
