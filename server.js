@@ -1,11 +1,16 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 
 const VERIFY_TOKEN = 'drmina2024';
-const WA_TOKEN = process.env.WA_TOKEN;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+const WA_TOKEN = 'EAAVX8PjEKMoBRZByywqi8hyGNirNWz07yTz7ZAE3wqL5MK51xx0qnlHWYZB3cBNXWE5K4csxJ5xZCKDGpFcYs4VbAkRcpEsaQLBnEvTsjidC3AbtMGjgIFc1x32Inl4DnzzuIFTEAN2YugN8d0fGj1c22sMqZAYpzR6xLtIpPwrbAoXR0kvIAibe7fUi5QT3F5fSzDo7Ox6kJCDSQqoKZBXl24ZAA43GLYoanI9P5VEbsEJgZAQ3uTi97jZASTPeZCkAe1QtR9FFZAKbcg8ZAgwBMS4x';
+const PHONE_NUMBER_ID = '1218801781318747';
 const GOOGLE_REVIEW_LINK = 'https://g.page/r/CUs38k2cmQ1UEBM/review';
+const DR_MINA_PERSONAL = '971551008368'; // Dr. Mina's personal number to receive complaints
+
+// Track which patients gave negative ratings (waiting for their complaint)
+const awaitingComplaint = {};
 
 const MSG_NEGATIVE = `Thank you for your honest feedback. 🙏\n\nI am truly sorry that your experience did not meet your expectations. This is not the standard of care I strive to provide.\n\n👉 *What specifically made you feel this way, and how can I improve?*\n\nI take every piece of feedback very seriously and personally. I value your trust and truly hope to have the chance to make it right. 💙\n\n— Dr. Mina`;
 
@@ -31,15 +36,10 @@ async function sendMessage(to, message) {
   };
 
   return new Promise((resolve, reject) => {
-    const https = require('https');
     const req = https.request(options, res => {
       let data = '';
       res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-  console.log("WhatsApp Status Code:", res.statusCode);
-  console.log("WhatsApp Response:", data);
-  resolve(data);
-});
+      res.on('end', () => resolve(data));
     });
     req.on('error', reject);
     req.write(body);
@@ -98,10 +98,22 @@ const server = http.createServer(async (req, res) => {
 
           console.log(`Message from ${from}: ${text}`);
 
-          if (!isNaN(rating) && rating >= 1 && rating <= 5) {
+          // Check if this patient is waiting to send their complaint
+          if (awaitingComplaint[from]) {
+            // Forward complaint to Dr. Mina's personal number
+            const forwardMsg = `🔔 *Patient Feedback Alert*\n\nFrom: +${from}\nRating: ⭐ ${awaitingComplaint[from]}/5\n\nTheir feedback:\n"${text}"\n\n— Dr. Mina Review Bot`;
+            await sendMessage(DR_MINA_PERSONAL, forwardMsg);
+            console.log(`Forwarded complaint from ${from} to Dr. Mina`);
+            
+            // Thank the patient
+            await sendMessage(from, `Thank you for sharing this with me. I truly appreciate your honesty and will personally work on improving this. I hope to see you again soon. 💙\n\n— Dr. Mina`);
+            delete awaitingComplaint[from];
+            
+          } else if (!isNaN(rating) && rating >= 1 && rating <= 5) {
             if (rating <= 3) {
               await sendMessage(from, MSG_NEGATIVE);
-              console.log(`Sent negative response to ${from}`);
+              awaitingComplaint[from] = rating; // Mark as waiting for complaint
+              console.log(`Sent negative response to ${from}, waiting for complaint`);
             } else {
               await sendMessage(from, MSG_POSITIVE);
               console.log(`Sent positive response to ${from}`);
