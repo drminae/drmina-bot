@@ -1,4 +1,6 @@
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 
 const VERIFY_TOKEN = 'drmina2024';
 const WA_TOKEN = 'EAAVX8PjEKMoBRZByywqi8hyGNirNWz07yTz7ZAE3wqL5MK51xx0qnlHWYZB3cBNXWE5K4csxJ5xZCKDGpFcYs4VbAkRcpEsaQLBnEvTsjidC3AbtMGjgIFc1x32Inl4DnzzuIFTEAN2YugN8d0fGj1c22sMqZAYpzR6xLtIpPwrbAoXR0kvIAibe7fUi5QT3F5fSzDo7Ox6kJCDSQqoKZBXl24ZAA43GLYoanI9P5VEbsEJgZAQ3uTi97jZASTPeZCkAe1QtR9FFZAKbcg8ZAgwBMS4x';
@@ -29,7 +31,8 @@ async function sendMessage(to, message) {
   };
 
   return new Promise((resolve, reject) => {
-    const req = http.request({ ...options, hostname: 'graph.facebook.com' }, res => {
+    const https = require('https');
+    const req = https.request(options, res => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => resolve(data));
@@ -43,6 +46,19 @@ async function sendMessage(to, message) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
+  // SERVE PRIVACY POLICY
+  if (req.method === 'GET' && url.pathname === '/privacy.html') {
+    const filePath = path.join(__dirname, 'privacy.html');
+    if (fs.existsSync(filePath)) {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(fs.readFileSync(filePath));
+    } else {
+      res.writeHead(404);
+      res.end('Not found');
+    }
+    return;
+  }
+
   // META WEBHOOK VERIFICATION
   if (req.method === 'GET') {
     const mode = url.searchParams.get('hub.mode');
@@ -54,8 +70,8 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200);
       res.end(challenge);
     } else {
-      res.writeHead(403);
-      res.end('Forbidden');
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<h1>Dr Mina Review Bot is running!</h1>');
     }
     return;
   }
@@ -98,8 +114,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  res.writeHead(200);
-  res.end('Dr Mina Review Bot is running!');
+  res.writeHead(200, { 'Content-Type': 'text/html' });
+  res.end('<h1>Dr Mina Review Bot is running!</h1>');
 });
 
 const PORT = process.env.PORT || 3000;
