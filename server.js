@@ -35,7 +35,11 @@ async function sendMessage(to, message) {
     const req = https.request(options, res => {
       let data = '';
       res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve(data));
+      res.on('end', () => {
+  console.log("WhatsApp Status Code:", res.statusCode);
+  console.log("WhatsApp Response:", data);
+  resolve(data);
+});
     });
     req.on('error', reject);
     req.write(body);
