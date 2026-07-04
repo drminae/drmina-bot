@@ -7,9 +7,9 @@ const VERIFY_TOKEN = 'drmina2024';
 const WA_TOKEN = 'EAAVX8PjEKMoBRza7ojJhgmJgSI1qqHTUPeXsYvmv32OpEDQQrTwFlUvcH11NHuubNaNSpjSj0ay5GW9GcB4hz5kZBgiA32nZCkrOOZB9f2BXPMIiuIeboKwoZBeUHNl8Th5FPy8iRHNFfagntfAUWOZALZAA4aTiWVozH9vmkrZBbURLqH7OCJtDjojFmn8Lj6vpRuKmcr1Q9NqYSOr4f2LEGjwGJtGsCXIyhlwQd2kNUCx1OOYAZB4yCsrbfEuAMrJEklwTl3LRbIZABAQ8lMwZDZD';
 const PHONE_NUMBER_ID = '1218801781318747';
 const GOOGLE_REVIEW_LINK = 'https://g.page/r/CUs38k2cmQ1UEBM/review';
-const DR_MINA_PERSONAL = '971551008368'; // Dr. Mina's personal number to receive complaints
+const DR_MINA_PERSONAL = '971551008368';
+const SHEET_WEBHOOK = 'https://script.google.com/macros/s/AKfycbymMR_sc62FrCdyXkD5j7q9tNCKqH-ot7ElKR0RWFTUwcWMU7032-WxHEygEaLAYIs/exec';
 
-// Track which patients gave negative ratings (waiting for their complaint)
 const awaitingComplaint = {};
 
 const MSG_NEGATIVE = `Thank you for your honest feedback. 🙏\n\nI am truly sorry that your experience did not meet your expectations. This is not the standard of care I strive to provide.\n\n👉 *What specifically made you feel this way, and how can I improve?*\n\nI take every piece of feedback very seriously and personally. I value your trust and truly hope to have the chance to make it right. 💙\n\n— Dr. Mina`;
@@ -47,10 +47,52 @@ async function sendMessage(to, message) {
   });
 }
 
+async function logToSheet(phone, rating, feedback, type) {
+  try {
+    const now = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Dubai' });
+    const payload = JSON.stringify({
+      date: now,
+      phone: '+' + phone,
+      rating: rating,
+      type: type,
+      feedback: feedback || ''
+    });
+
+    const urlObj = new URL(SHEET_WEBHOOK);
+    const options = {
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    };
+
+    return new Promise((resolve) => {
+      const req = https.request(options, res => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          console.log(`Sheet logged: ${type} | +${phone} | Rating: ${rating}`);
+          resolve(data);
+        });
+      });
+      req.on('error', (e) => {
+        console.error('Sheet error:', e.message);
+        resolve();
+      });
+      req.write(payload);
+      req.end();
+    });
+  } catch(e) {
+    console.error('Sheet log error:', e.message);
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
-  // SERVE PRIVACY POLICY
   if (req.method === 'GET' && url.pathname === '/privacy.html') {
     const filePath = path.join(__dirname, 'privacy.html');
     if (fs.existsSync(filePath)) {
@@ -63,14 +105,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // META WEBHOOK VERIFICATION
   if (req.method === 'GET') {
     const mode = url.searchParams.get('hub.mode');
     const token = url.searchParams.get('hub.verify_token');
     const challenge = url.searchParams.get('hub.challenge');
-
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      console.log('Webhook verified!');
       res.writeHead(200);
       res.end(challenge);
     } else {
@@ -80,7 +119,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // RECEIVE WHATSAPP MESSAGES
   if (req.method === 'POST') {
     let body = '';
     req.on('data', chunk => body += chunk);
@@ -98,40 +136,38 @@ const server = http.createServer(async (req, res) => {
 
           console.log(`Message from ${from}: ${text}`);
 
-          // Check if this patient is waiting to send their complaint
           if (awaitingComplaint[from]) {
-            // Forward complaint to Dr. Mina's personal number
+            // Forward to Dr. Mina
             const forwardMsg = `🔔 *Patient Feedback Alert*\n\nFrom: +${from}\nRating: ⭐ ${awaitingComplaint[from]}/5\n\nTheir feedback:\n"${text}"\n\n— Dr. Mina Review Bot`;
             await sendMessage(DR_MINA_PERSONAL, forwardMsg);
-            console.log(`Forwarded complaint from ${from} to Dr. Mina`);
-            
+            // Log to Google Sheet
+            await logToSheet(from, awaitingComplaint[from], text, 'NEGATIVE');
             // Thank the patient
             await sendMessage(from, `Thank you for sharing this with me. I truly appreciate your honesty and will personally work on improving this. I hope to see you again soon. 💙\n\n— Dr. Mina`);
             delete awaitingComplaint[from];
-            
+
           } else if (!isNaN(rating) && rating >= 1 && rating <= 5) {
             if (rating <= 3) {
               await sendMessage(from, MSG_NEGATIVE);
-              awaitingComplaint[from] = rating; // Mark as waiting for complaint
-              console.log(`Sent negative response to ${from}, waiting for complaint`);
+              awaitingComplaint[from] = rating;
+              await logToSheet(from, rating, 'Awaiting feedback...', 'NEGATIVE');
             } else {
               await sendMessage(from, MSG_POSITIVE);
-              console.log(`Sent positive response to ${from}`);
+              await logToSheet(from, rating, '', 'POSITIVE');
             }
           }
         }
       } catch (e) {
         console.error('Error:', e);
       }
-
       res.writeHead(200);
       res.end('OK');
     });
     return;
   }
 
-  res.writeHead(200, { 'Content-Type': 'text/html' });
-  res.end('<h1>Dr Mina Review Bot is running!</h1>');
+  res.writeHead(200);
+  res.end('OK');
 });
 
 const PORT = process.env.PORT || 3000;
