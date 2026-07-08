@@ -4,7 +4,7 @@ const path = require('path');
 const https = require('https');
 
 const VERIFY_TOKEN = 'drmina2024';
-const WA_TOKEN = EAAVX8PjEKMoBRxAsRMLnwaafQPs4g8uJywBobZCTqzas6GHXB3FJyrgDZBnuyQYLRQqk6ItxqxKWKHrx9JRNCzeztqKJCeBZCB8qAiWU9HnkVClqEY1JUum5uifi7DUvqO9i9H5TwudYIZBCRUGZB4c3tTQzCcwhdTDEd6JqcIay5SpyUUgsoSMi3ZBlVxdCe10KEypDGZBNltFUlZBz5b2yapIBv00IQblvbtSsDPxPJOfs9ZAPAdYI6JhadNbqeXwOZCulNgBvdEVI4gKU2v9wZDZD;
+const WA_TOKEN = "EAAVX8PjEKMoBRxAsRMLnwaafQPs4g8uJywBobZCTqzas6GHXB3FJyrgDZBnuyQYLRQqk6ItxqxKWKHrx9JRNCzeztqKJCeBZCB8qAiWU9HnkVClqEY1JUum5uifi7DUvqO9i9H5TwudYIZBCRUGZB4c3tTQzCcwhdTDEd6JqcIay5SpyUUgsoSMi3ZBlVxdCe10KEypDGZBNltFUlZBz5b2yapIBv00IQblvbtSsDPxPJOfs9ZAPAdYI6JhadNbqeXwOZCulNgBvdEVI4gKU2v9wZDZD';
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
 const GOOGLE_REVIEW_LINK = 'https://g.page/r/CUs38k2cmQ1UEBM/review';
