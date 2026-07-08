@@ -4,27 +4,28 @@ const path = require('path');
 const https = require('https');
 
 const VERIFY_TOKEN = 'drmina2024';
-const WA_TOKEN = 'EAAVX8PjEKMoBRza7ojJhgmJgSI1qqHTUPeXsYvmv32OpEDQQrTwFlUvcH11NHuubNaNSpjSj0ay5GW9GcB4hz5kZBgiA32nZCkrOOZB9f2BXPMIiuIeboKwoZBeUHNl8Th5FPy8iRHNFfagntfAUWOZALZAA4aTiWVozH9vmkrZBbURLqH7OCJtDjojFmn8Lj6vpRuKmcr1Q9NqYSOr4f2LEGjwGJtGsCXIyhlwQd2kNUCx1OOYAZB4yCsrbfEuAMrJEklwTl3LRbIZABAQ8lMwZDZD';
-const PHONE_NUMBER_ID = '1218801781318747';
+const WA_TOKEN = EAAVX8PjEKMoBRxAsRMLnwaafQPs4g8uJywBobZCTqzas6GHXB3FJyrgDZBnuyQYLRQqk6ItxqxKWKHrx9JRNCzeztqKJCeBZCB8qAiWU9HnkVClqEY1JUum5uifi7DUvqO9i9H5TwudYIZBCRUGZB4c3tTQzCcwhdTDEd6JqcIay5SpyUUgsoSMi3ZBlVxdCe10KEypDGZBNltFUlZBz5b2yapIBv00IQblvbtSsDPxPJOfs9ZAPAdYI6JhadNbqeXwOZCulNgBvdEVI4gKU2v9wZDZD;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+
 const GOOGLE_REVIEW_LINK = 'https://g.page/r/CUs38k2cmQ1UEBM/review';
 const DR_MINA_PERSONAL = '971551008368';
+
 const SHEET_WEBHOOK = 'https://script.google.com/macros/s/AKfycbymMR_sc62FrCdyXkD5j7q9tNCKqH-ot7ElKR0RWFTUwcWMU7032-WxHEygEaLAYIs/exec';
 const COMPLAINTS_FILE = path.join(__dirname, 'complaints.json');
 
-// Load persistent complaints tracking from file
 function loadComplaints() {
   try {
     if (fs.existsSync(COMPLAINTS_FILE)) {
       return JSON.parse(fs.readFileSync(COMPLAINTS_FILE, 'utf8'));
     }
-  } catch(e) {}
+  } catch (e) {}
   return {};
 }
 
 function saveComplaints(data) {
   try {
     fs.writeFileSync(COMPLAINTS_FILE, JSON.stringify(data));
-  } catch(e) {}
+  } catch (e) {}
 }
 
 let awaitingComplaint = loadComplaints();
@@ -46,7 +47,7 @@ async function sendMessage(to, message) {
     path: `/v19.0/${PHONE_NUMBER_ID}/messages`,
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${WA_TOKEN}`,
+      Authorization: `Bearer ${WA_TOKEN}`,
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(body)
     }
@@ -55,9 +56,21 @@ async function sendMessage(to, message) {
   return new Promise((resolve, reject) => {
     const req = https.request(options, res => {
       let data = '';
+
       res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve(data));
+
+      res.on('end', () => {
+        console.log('WhatsApp Status Code:', res.statusCode);
+        console.log('WhatsApp Response:', data);
+
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(data);
+        } else {
+          reject(new Error(data));
+        }
+      });
     });
+
     req.on('error', reject);
     req.write(body);
     req.end();
@@ -67,15 +80,17 @@ async function sendMessage(to, message) {
 async function logToSheet(phone, rating, feedback, type) {
   try {
     const now = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Dubai' });
+
     const payload = JSON.stringify({
       date: now,
       phone: '+' + phone,
-      rating: rating,
-      type: type,
+      rating,
+      type,
       feedback: feedback || ''
     });
 
     const urlObj = new URL(SHEET_WEBHOOK);
+
     const options = {
       hostname: urlObj.hostname,
       path: urlObj.pathname + urlObj.search,
@@ -86,23 +101,27 @@ async function logToSheet(phone, rating, feedback, type) {
       }
     };
 
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       const req = https.request(options, res => {
         let data = '';
+
         res.on('data', chunk => data += chunk);
+
         res.on('end', () => {
           console.log(`Sheet logged: ${type} | +${phone} | Rating: ${rating}`);
           resolve(data);
         });
       });
-      req.on('error', (e) => {
+
+      req.on('error', e => {
         console.error('Sheet error:', e.message);
         resolve();
       });
+
       req.write(payload);
       req.end();
     });
-  } catch(e) {
+  } catch (e) {
     console.error('Sheet log error:', e.message);
   }
 }
@@ -112,6 +131,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/privacy.html') {
     const filePath = path.join(__dirname, 'privacy.html');
+
     if (fs.existsSync(filePath)) {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(fs.readFileSync(filePath));
@@ -119,6 +139,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404);
       res.end('Not found');
     }
+
     return;
   }
 
@@ -126,6 +147,7 @@ const server = http.createServer(async (req, res) => {
     const mode = url.searchParams.get('hub.mode');
     const token = url.searchParams.get('hub.verify_token');
     const challenge = url.searchParams.get('hub.challenge');
+
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
       res.writeHead(200);
       res.end(challenge);
@@ -133,70 +155,77 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end('<h1>Dr Mina Review Bot is running!</h1>');
     }
+
     return;
   }
 
   if (req.method === 'POST') {
     let body = '';
+
     req.on('data', chunk => body += chunk);
+
     req.on('end', async () => {
       try {
         const data = JSON.parse(body);
-        const entry = data.entry?.[0];
-        const changes = entry?.changes?.[0];
-        const message = changes?.value?.messages?.[0];
+        const message = data.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 
         if (message && message.type === 'text') {
           const from = message.from;
           const text = message.text.body.trim();
-          const rating = parseInt(text);
+          const rating = parseInt(text, 10);
 
           console.log(`Message from ${from}: ${text}`);
 
-          // Reload complaints in case of restart
           awaitingComplaint = loadComplaints();
 
           if (awaitingComplaint[from]) {
-            // Forward complaint to Dr. Mina's personal WhatsApp
             const forwardMsg = `🔔 *Patient Feedback*\n\nFrom: +${from}\nRating: ⭐ ${awaitingComplaint[from]}/5\n\nFeedback:\n"${text}"\n\n— Dr. Mina Bot`;
+
             await sendMessage(DR_MINA_PERSONAL, forwardMsg);
             console.log(`Forwarded complaint from ${from} to Dr. Mina`);
 
-            // Log to Google Sheet
             await logToSheet(from, awaitingComplaint[from], text, 'NEGATIVE');
 
-            // Thank the patient
-            await sendMessage(from, `Thank you for sharing this with me. I truly appreciate your honesty and will personally work on improving this. I hope to see you again soon. 💙\n\n— Dr. Mina`);
+            await sendMessage(
+              from,
+              `Thank you for sharing this with me. I truly appreciate your honesty and will personally work on improving this. I hope to see you again soon. 💙\n\n— Dr. Mina`
+            );
 
-            // Remove from tracking
             delete awaitingComplaint[from];
             saveComplaints(awaitingComplaint);
 
           } else if (!isNaN(rating) && rating >= 1 && rating <= 5) {
             if (rating <= 3) {
               await sendMessage(from, MSG_NEGATIVE);
+
               awaitingComplaint[from] = rating;
               saveComplaints(awaitingComplaint);
+
               console.log(`Negative rating ${rating} from ${from} - awaiting complaint`);
               await logToSheet(from, rating, 'Awaiting feedback...', 'NEGATIVE');
+
             } else {
               await sendMessage(from, MSG_POSITIVE);
+
               console.log(`Positive rating ${rating} from ${from}`);
               await logToSheet(from, rating, '', 'POSITIVE');
             }
+
           } else {
-            // Any other message — forward to Dr. Mina so she can see it
             const fwdMsg = `💬 *Message from patient*\n\nFrom: +${from}\nMessage: "${text}"\n\n— Dr. Mina Bot`;
+
             await sendMessage(DR_MINA_PERSONAL, fwdMsg);
             console.log(`Forwarded general message from ${from}`);
           }
         }
       } catch (e) {
-        console.error('Error:', e);
+        console.error('Error:', e.message);
       }
+
       res.writeHead(200);
       res.end('OK');
     });
+
     return;
   }
 
@@ -205,6 +234,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
 server.listen(PORT, () => {
   console.log(`Dr Mina Review Bot running on port ${PORT}`);
 });
