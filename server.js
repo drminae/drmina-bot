@@ -9,8 +9,25 @@ const PHONE_NUMBER_ID = '1218801781318747';
 const GOOGLE_REVIEW_LINK = 'https://g.page/r/CUs38k2cmQ1UEBM/review';
 const DR_MINA_PERSONAL = '971551008368';
 const SHEET_WEBHOOK = 'https://script.google.com/macros/s/AKfycbymMR_sc62FrCdyXkD5j7q9tNCKqH-ot7ElKR0RWFTUwcWMU7032-WxHEygEaLAYIs/exec';
+const COMPLAINTS_FILE = path.join(__dirname, 'complaints.json');
 
-const awaitingComplaint = {};
+// Load persistent complaints tracking from file
+function loadComplaints() {
+  try {
+    if (fs.existsSync(COMPLAINTS_FILE)) {
+      return JSON.parse(fs.readFileSync(COMPLAINTS_FILE, 'utf8'));
+    }
+  } catch(e) {}
+  return {};
+}
+
+function saveComplaints(data) {
+  try {
+    fs.writeFileSync(COMPLAINTS_FILE, JSON.stringify(data));
+  } catch(e) {}
+}
+
+let awaitingComplaint = loadComplaints();
 
 const MSG_NEGATIVE = `Thank you for your honest feedback. 🙏\n\nI am truly sorry that your experience did not meet your expectations. This is not the standard of care I strive to provide.\n\n👉 *What specifically made you feel this way, and how can I improve?*\n\nI take every piece of feedback very seriously and personally. I value your trust and truly hope to have the chance to make it right. 💙\n\n— Dr. Mina`;
 
@@ -136,25 +153,42 @@ const server = http.createServer(async (req, res) => {
 
           console.log(`Message from ${from}: ${text}`);
 
+          // Reload complaints in case of restart
+          awaitingComplaint = loadComplaints();
+
           if (awaitingComplaint[from]) {
-            // Forward to Dr. Mina
-            const forwardMsg = `🔔 *Patient Feedback Alert*\n\nFrom: +${from}\nRating: ⭐ ${awaitingComplaint[from]}/5\n\nTheir feedback:\n"${text}"\n\n— Dr. Mina Review Bot`;
+            // Forward complaint to Dr. Mina's personal WhatsApp
+            const forwardMsg = `🔔 *Patient Feedback*\n\nFrom: +${from}\nRating: ⭐ ${awaitingComplaint[from]}/5\n\nFeedback:\n"${text}"\n\n— Dr. Mina Bot`;
             await sendMessage(DR_MINA_PERSONAL, forwardMsg);
+            console.log(`Forwarded complaint from ${from} to Dr. Mina`);
+
             // Log to Google Sheet
             await logToSheet(from, awaitingComplaint[from], text, 'NEGATIVE');
+
             // Thank the patient
             await sendMessage(from, `Thank you for sharing this with me. I truly appreciate your honesty and will personally work on improving this. I hope to see you again soon. 💙\n\n— Dr. Mina`);
+
+            // Remove from tracking
             delete awaitingComplaint[from];
+            saveComplaints(awaitingComplaint);
 
           } else if (!isNaN(rating) && rating >= 1 && rating <= 5) {
             if (rating <= 3) {
               await sendMessage(from, MSG_NEGATIVE);
               awaitingComplaint[from] = rating;
+              saveComplaints(awaitingComplaint);
+              console.log(`Negative rating ${rating} from ${from} - awaiting complaint`);
               await logToSheet(from, rating, 'Awaiting feedback...', 'NEGATIVE');
             } else {
               await sendMessage(from, MSG_POSITIVE);
+              console.log(`Positive rating ${rating} from ${from}`);
               await logToSheet(from, rating, '', 'POSITIVE');
             }
+          } else {
+            // Any other message — forward to Dr. Mina so she can see it
+            const fwdMsg = `💬 *Message from patient*\n\nFrom: +${from}\nMessage: "${text}"\n\n— Dr. Mina Bot`;
+            await sendMessage(DR_MINA_PERSONAL, fwdMsg);
+            console.log(`Forwarded general message from ${from}`);
           }
         }
       } catch (e) {
