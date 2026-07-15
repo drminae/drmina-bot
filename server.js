@@ -3,60 +3,35 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
+/* =========================================================
+   SETTINGS
+========================================================= */
+
 const VERIFY_TOKEN = 'drmina2024';
 
-// Keep the real token and phone ID only in Render Environment Variables
+// The actual EA... token and phone-number ID remain in:
+// Render → Environment Variables
 const WA_TOKEN = process.env.WA_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+
+// You can change the API version later from Render if required.
+const WA_API_VERSION = process.env.WA_API_VERSION || 'v25.0';
 
 const GOOGLE_REVIEW_LINK =
   'https://g.page/r/CUs38k2cmQ1UEBM/review';
 
+// Dr Mina’s personal WhatsApp number
 const DR_MINA_PERSONAL = '971551008368';
 
+// Google Sheets Apps Script webhook
 const SHEET_WEBHOOK =
   'https://script.google.com/macros/s/AKfycbymMR_sc62FrCdyXkD5j7q9tNCKqH-ot7ElKR0RWFTUwcWMU7032-WxHEygEaLAYIs/exec';
 
 const COMPLAINTS_FILE = path.join(__dirname, 'complaints.json');
 
-function getDubaiTime() {
-  return new Date().toLocaleString('en-GB', {
-    timeZone: 'Asia/Dubai'
-  });
-}
-
-function loadComplaints() {
-  try {
-    if (fs.existsSync(COMPLAINTS_FILE)) {
-      return JSON.parse(
-        fs.readFileSync(COMPLAINTS_FILE, 'utf8')
-      );
-    }
-  } catch (error) {
-    console.error(
-      'Could not load complaints:',
-      error.message
-    );
-  }
-
-  return {};
-}
-
-function saveComplaints(data) {
-  try {
-    fs.writeFileSync(
-      COMPLAINTS_FILE,
-      JSON.stringify(data, null, 2)
-    );
-  } catch (error) {
-    console.error(
-      'Could not save complaints:',
-      error.message
-    );
-  }
-}
-
-let awaitingComplaint = loadComplaints();
+/* =========================================================
+   PATIENT MESSAGES
+========================================================= */
 
 const MSG_NEGATIVE =
   `Thank you for your honest feedback. 🙏\n\n` +
@@ -77,11 +52,52 @@ const MSG_POSITIVE =
   `It only takes 1 minute and makes a huge difference. Thank you! 🙏\n\n` +
   `— Dr. Mina`;
 
-const MSG_COMPLAINT_THANK_YOU =
-  `Thank you for sharing this with me. ` +
+const MSG_FEEDBACK_THANK_YOU =
+  `Thank you for sharing this with me. 🙏\n\n` +
   `I truly appreciate your honesty and will personally work on improving this. ` +
-  `I hope to see you again soon. 💙\n\n` +
+  `I hope to have the opportunity to provide you with a better experience in the future. 💙\n\n` +
   `— Dr. Mina`;
+
+/* =========================================================
+   HELPER FUNCTIONS
+========================================================= */
+
+function getDubaiTime() {
+  return new Date().toLocaleString('en-GB', {
+    timeZone: 'Asia/Dubai'
+  });
+}
+
+function loadComplaints() {
+  try {
+    if (fs.existsSync(COMPLAINTS_FILE)) {
+      const content = fs.readFileSync(COMPLAINTS_FILE, 'utf8');
+      return JSON.parse(content);
+    }
+  } catch (error) {
+    console.error('Could not load pending feedback:', error.message);
+  }
+
+  return {};
+}
+
+function saveComplaints(data) {
+  try {
+    fs.writeFileSync(
+      COMPLAINTS_FILE,
+      JSON.stringify(data, null, 2),
+      'utf8'
+    );
+  } catch (error) {
+    console.error('Could not save pending feedback:', error.message);
+  }
+}
+
+let awaitingComplaint = loadComplaints();
+
+/* =========================================================
+   SEND WHATSAPP MESSAGE
+========================================================= */
 
 async function sendMessage(to, message) {
   if (!WA_TOKEN) {
@@ -109,7 +125,7 @@ async function sendMessage(to, message) {
 
   const options = {
     hostname: 'graph.facebook.com',
-    path: `/v19.0/${PHONE_NUMBER_ID}/messages`,
+    path: `/${WA_API_VERSION}/${PHONE_NUMBER_ID}/messages`,
     method: 'POST',
     headers: {
       Authorization: `Bearer ${WA_TOKEN}`,
@@ -122,21 +138,13 @@ async function sendMessage(to, message) {
     const request = https.request(options, response => {
       let responseData = '';
 
-      response.on(
-        'data',
-        chunk => (responseData += chunk)
-      );
+      response.on('data', chunk => {
+        responseData += chunk;
+      });
 
       response.on('end', () => {
-        console.log(
-          'WhatsApp Status Code:',
-          response.statusCode
-        );
-
-        console.log(
-          'WhatsApp Response:',
-          responseData
-        );
+        console.log('WhatsApp status:', response.statusCode);
+        console.log('WhatsApp response:', responseData);
 
         if (
           response.statusCode >= 200 &&
@@ -146,7 +154,7 @@ async function sendMessage(to, message) {
         } else {
           reject(
             new Error(
-              `WhatsApp API rejected the message: ${responseData}`
+              `WhatsApp rejected the message: ${responseData}`
             )
           );
         }
@@ -159,74 +167,67 @@ async function sendMessage(to, message) {
   });
 }
 
-async function forwardPatientMessage(
-  patientNumber,
-  patientMessage
-) {
-  // Prevent a loop when Dr. Mina messages the bot directly
+/* =========================================================
+   SEND COPY TO DR MINA
+========================================================= */
+
+async function forwardIncomingMessage(patientNumber, patientMessage) {
+  // Prevent copies being sent back when Dr Mina messages the number.
   if (patientNumber === DR_MINA_PERSONAL) {
     return;
   }
 
   const notification =
-    `📥 *New Patient Message*\n\n` +
-    `Date: ${getDubaiTime()}\n` +
-    `Patient: +${patientNumber}\n\n` +
-    `Patient wrote:\n` +
-    `"${patientMessage}"\n\n` +
-    `— Dr. Mina Bot`;
+    `📥 *Patient Message Received*\n\n` +
+    `📅 ${getDubaiTime()}\n\n` +
+    `👤 Patient\n` +
+    `+${patientNumber}\n\n` +
+    `💬 Message\n` +
+    `"${patientMessage}"`;
 
-  await sendMessage(
-    DR_MINA_PERSONAL,
-    notification
-  );
+  await sendMessage(DR_MINA_PERSONAL, notification);
 
   console.log(
-    `Forwarded patient message from ${patientNumber}`
+    `Patient message copied from ${patientNumber} to Dr Mina`
   );
 }
 
-async function sendBotReplyAndCopy(
+async function sendPatientReplyWithCopy(
   patientNumber,
   replyMessage,
-  description
+  actionDescription
 ) {
-  // Send the real reply to the patient
-  await sendMessage(
-    patientNumber,
-    replyMessage
-  );
+  // Send the actual reply to the patient.
+  await sendMessage(patientNumber, replyMessage);
 
-  // Do not forward a message back to the same personal number
+  // Avoid sending a duplicate copy back to Dr Mina
+  // when she is personally testing from her own number.
   if (patientNumber === DR_MINA_PERSONAL) {
     return;
   }
 
-  const copy =
-    `🤖 *Automatic Bot Reply*\n\n` +
-    `Date: ${getDubaiTime()}\n` +
-    `Patient: +${patientNumber}\n` +
-    `Action: ${description}\n\n` +
-    `Bot sent:\n` +
-    `${replyMessage}\n\n` +
-    `— Dr. Mina Bot`;
+  const notification =
+    `📤 *Reply Sent to Patient*\n\n` +
+    `📅 ${getDubaiTime()}\n\n` +
+    `👤 Patient\n` +
+    `+${patientNumber}\n\n` +
+    `✅ Action\n` +
+    `${actionDescription}\n\n` +
+    `💬 Reply sent\n` +
+    `${replyMessage}`;
 
-  await sendMessage(
-    DR_MINA_PERSONAL,
-    copy
-  );
+  await sendMessage(DR_MINA_PERSONAL, notification);
 
   console.log(
-    `Forwarded bot reply for ${patientNumber}`
+    `Outgoing reply copied for patient ${patientNumber}`
   );
 }
 
-async function logToSheet(
-  phone,
-  rating,
-  feedback,
-  type
-) {
+/* =========================================================
+   GOOGLE SHEETS
+========================================================= */
+
+async function logToSheet(phone, rating, feedback, type) {
   try {
     const payload = JSON.stringify({
       date: getDubaiTime(),
@@ -240,42 +241,34 @@ async function logToSheet(
 
     const options = {
       hostname: urlObject.hostname,
-      path:
-        urlObject.pathname +
-        urlObject.search,
+      path: urlObject.pathname + urlObject.search,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length':
-          Buffer.byteLength(payload)
+        'Content-Length': Buffer.byteLength(payload)
       }
     };
 
     return new Promise(resolve => {
-      const request = https.request(
-        options,
-        response => {
-          let responseData = '';
+      const request = https.request(options, response => {
+        let responseData = '';
 
-          response.on(
-            'data',
-            chunk =>
-              (responseData += chunk)
+        response.on('data', chunk => {
+          responseData += chunk;
+        });
+
+        response.on('end', () => {
+          console.log(
+            `Google Sheet updated: ${type} | +${phone} | Rating: ${rating}`
           );
 
-          response.on('end', () => {
-            console.log(
-              `Sheet logged: ${type} | +${phone} | Rating: ${rating}`
-            );
-
-            resolve(responseData);
-          });
-        }
-      );
+          resolve(responseData);
+        });
+      });
 
       request.on('error', error => {
         console.error(
-          'Google Sheet error:',
+          'Google Sheets connection error:',
           error.message
         );
 
@@ -287,242 +280,217 @@ async function logToSheet(
     });
   } catch (error) {
     console.error(
-      'Google Sheet logging error:',
+      'Google Sheets logging error:',
       error.message
     );
   }
 }
 
-const server = http.createServer(
-  async (request, response) => {
-    const url = new URL(
-      request.url,
-      `http://${request.headers.host}`
-    );
+/* =========================================================
+   WEB SERVER
+========================================================= */
 
-    // Privacy-policy page
+const server = http.createServer(async (request, response) => {
+  const url = new URL(
+    request.url,
+    `http://${request.headers.host}`
+  );
+
+  /* Privacy policy */
+
+  if (
+    request.method === 'GET' &&
+    url.pathname === '/privacy.html'
+  ) {
+    const filePath = path.join(__dirname, 'privacy.html');
+
+    if (fs.existsSync(filePath)) {
+      response.writeHead(200, {
+        'Content-Type': 'text/html'
+      });
+
+      response.end(fs.readFileSync(filePath));
+    } else {
+      response.writeHead(404);
+      response.end('Not found');
+    }
+
+    return;
+  }
+
+  /* Meta webhook verification */
+
+  if (request.method === 'GET') {
+    const mode = url.searchParams.get('hub.mode');
+    const token = url.searchParams.get('hub.verify_token');
+    const challenge = url.searchParams.get('hub.challenge');
+
     if (
-      request.method === 'GET' &&
-      url.pathname === '/privacy.html'
+      mode === 'subscribe' &&
+      token === VERIFY_TOKEN
     ) {
-      const filePath = path.join(
-        __dirname,
-        'privacy.html'
+      console.log('Webhook verified successfully.');
+
+      response.writeHead(200);
+      response.end(challenge);
+    } else {
+      response.writeHead(200, {
+        'Content-Type': 'text/html'
+      });
+
+      response.end(
+        '<h1>Dr Mina Review Assistant is running!</h1>'
       );
-
-      if (fs.existsSync(filePath)) {
-        response.writeHead(200, {
-          'Content-Type': 'text/html'
-        });
-
-        response.end(
-          fs.readFileSync(filePath)
-        );
-      } else {
-        response.writeHead(404);
-        response.end('Not found');
-      }
-
-      return;
     }
 
-    // Meta webhook verification
-    if (request.method === 'GET') {
-      const mode =
-        url.searchParams.get('hub.mode');
+    return;
+  }
 
-      const token =
-        url.searchParams.get(
-          'hub.verify_token'
-        );
+  /* Receive WhatsApp messages */
 
-      const challenge =
-        url.searchParams.get(
-          'hub.challenge'
-        );
+  if (request.method === 'POST') {
+    let body = '';
 
-      if (
-        mode === 'subscribe' &&
-        token === VERIFY_TOKEN
-      ) {
-        console.log(
-          'Webhook verified successfully.'
-        );
+    request.on('data', chunk => {
+      body += chunk;
+    });
 
-        response.writeHead(200);
-        response.end(challenge);
-      } else {
-        response.writeHead(200, {
-          'Content-Type': 'text/html'
-        });
+    request.on('end', async () => {
+      try {
+        const data = JSON.parse(body);
 
-        response.end(
-          '<h1>Dr Mina Review Bot is running!</h1>'
-        );
-      }
+        const message =
+          data.entry?.[0]
+            ?.changes?.[0]
+            ?.value?.messages?.[0];
 
-      return;
-    }
+        // Delivery and read receipts do not contain a message.
+        if (message && message.type === 'text') {
+          const from = message.from;
+          const text = message.text.body.trim();
+          const rating = Number(text);
 
-    // Receive incoming WhatsApp webhook events
-    if (request.method === 'POST') {
-      let body = '';
+          console.log(`Message from ${from}: ${text}`);
 
-      request.on(
-        'data',
-        chunk => (body += chunk)
-      );
+          // Send Dr Mina a copy of every patient message.
+          await forwardIncomingMessage(from, text);
 
-      request.on('end', async () => {
-        try {
-          const data = JSON.parse(body);
+          awaitingComplaint = loadComplaints();
 
-          const message =
-            data.entry?.[0]
-              ?.changes?.[0]
-              ?.value?.messages?.[0];
+          /* Patient is sending written feedback after rating 1–3 */
 
-          // Ignore delivery/read status notifications
-          if (
-            message &&
-            message.type === 'text'
-          ) {
-            const from = message.from;
+          if (awaitingComplaint[from]) {
+            const originalRating = awaitingComplaint[from];
 
-            const text =
-              message.text.body.trim();
+            await logToSheet(
+              from,
+              originalRating,
+              text,
+              'NEGATIVE FEEDBACK'
+            );
 
-            const rating =
-              Number(text);
+            await sendPatientReplyWithCopy(
+              from,
+              MSG_FEEDBACK_THANK_YOU,
+              `Written feedback received following a rating of ${originalRating}/5. Final acknowledgement sent.`
+            );
+
+            delete awaitingComplaint[from];
+            saveComplaints(awaitingComplaint);
 
             console.log(
-              `Message from ${from}: ${text}`
+              `Feedback process completed for ${from}`
             );
+          }
 
-            // Forward every incoming patient message
-            await forwardPatientMessage(
-              from,
-              text
-            );
+          /* Patient has sent a rating from 1 to 5 */
 
-            awaitingComplaint =
-              loadComplaints();
+          else if (
+            Number.isInteger(rating) &&
+            rating >= 1 &&
+            rating <= 5
+          ) {
+            /* Rating 1–3 */
 
-            // Patient is replying with complaint details
-            if (awaitingComplaint[from]) {
-              const originalRating =
-                awaitingComplaint[from];
+            if (rating <= 3) {
+              await sendPatientReplyWithCopy(
+                from,
+                MSG_NEGATIVE,
+                `Negative rating received: ${rating}/5. The patient was asked to explain the experience.`
+              );
+
+              awaitingComplaint[from] = rating;
+              saveComplaints(awaitingComplaint);
 
               await logToSheet(
                 from,
-                originalRating,
-                text,
-                'NEGATIVE FEEDBACK'
-              );
-
-              await sendBotReplyAndCopy(
-                from,
-                MSG_COMPLAINT_THANK_YOU,
-                `Final response after written feedback for rating ${originalRating}/5`
-              );
-
-              delete awaitingComplaint[from];
-
-              saveComplaints(
-                awaitingComplaint
+                rating,
+                'Awaiting written feedback...',
+                'NEGATIVE'
               );
 
               console.log(
-                `Completed complaint workflow for ${from}`
+                `Rating ${rating}/5 received from ${from}; awaiting written feedback`
               );
             }
 
-            // Rating from 1 to 5
-            else if (
-              Number.isInteger(rating) &&
-              rating >= 1 &&
-              rating <= 5
-            ) {
-              // Negative rating
-              if (rating <= 3) {
-                await sendBotReplyAndCopy(
-                  from,
-                  MSG_NEGATIVE,
-                  `Negative rating received: ${rating}/5`
-                );
+            /* Rating 4–5 */
 
-                awaitingComplaint[from] =
-                  rating;
-
-                saveComplaints(
-                  awaitingComplaint
-                );
-
-                await logToSheet(
-                  from,
-                  rating,
-                  'Awaiting written feedback...',
-                  'NEGATIVE'
-                );
-
-                console.log(
-                  `Negative rating ${rating} from ${from}; awaiting explanation`
-                );
-              }
-
-              // Positive rating
-              else {
-                await sendBotReplyAndCopy(
-                  from,
-                  MSG_POSITIVE,
-                  `Positive rating received: ${rating}/5. Google review link sent.`
-                );
-
-                await logToSheet(
-                  from,
-                  rating,
-                  '',
-                  'POSITIVE'
-                );
-
-                console.log(
-                  `Positive rating ${rating} from ${from}`
-                );
-              }
-            }
-
-            // Any message that is not a rating
             else {
+              await sendPatientReplyWithCopy(
+                from,
+                MSG_POSITIVE,
+                `Positive rating received: ${rating}/5. The Google review link was sent.`
+              );
+
+              await logToSheet(
+                from,
+                rating,
+                '',
+                'POSITIVE'
+              );
+
               console.log(
-                `General patient message forwarded from ${from}`
+                `Positive rating ${rating}/5 received from ${from}`
               );
             }
           }
-        } catch (error) {
-          console.error(
-            'Webhook processing error:',
-            error.message
-          );
+
+          /* Any message other than a rating */
+
+          else {
+            console.log(
+              `General message received and copied from ${from}`
+            );
+          }
         }
+      } catch (error) {
+        console.error(
+          'Message-processing error:',
+          error.message
+        );
+      }
 
-        // Always acknowledge Meta webhook quickly
-        response.writeHead(200);
-        response.end('OK');
-      });
+      // Meta expects a quick successful response.
+      response.writeHead(200);
+      response.end('OK');
+    });
 
-      return;
-    }
-
-    response.writeHead(200);
-    response.end('OK');
+    return;
   }
-);
 
-const PORT =
-  process.env.PORT || 3000;
+  response.writeHead(200);
+  response.end('OK');
+});
+
+/* =========================================================
+   START SERVER
+========================================================= */
+
+const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => {
   console.log(
-    `Dr Mina Review Bot running on port ${PORT}`
+    `Dr Mina Review Assistant running on port ${PORT}`
   );
 });
