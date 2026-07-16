@@ -1,12 +1,19 @@
 {
   "name": "dr-mina-review-bot",
-  "version": "1.0.0",
-  "description": "WhatsApp review bot for Dr. Mina Charopeme",
+  "version": "1.1.0",
+  "description": "WhatsApp Review & Inbox System for Dr. Mina Charopeme",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "engines": {
-    "node": ">=16"
+    "node": ">=18"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "body-parser": "^1.20.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "sqlite3": "^5.1.7"
   }
 }
