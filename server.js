@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const { createClient } = require('@supabase/supabase-js');
 
 /* =========================================================
    SETTINGS
@@ -9,25 +10,27 @@ const https = require('https');
 
 const VERIFY_TOKEN = 'drmina2024';
 
-// The actual EA... token and phone-number ID remain in:
-// Render → Environment Variables
 const WA_TOKEN = process.env.WA_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-
-// You can change the API version later from Render if required.
 const WA_API_VERSION = process.env.WA_API_VERSION || 'v25.0';
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
 const GOOGLE_REVIEW_LINK =
   'https://g.page/r/CUs38k2cmQ1UEBM/review';
 
-// Dr Mina’s personal WhatsApp number
 const DR_MINA_PERSONAL = '971551008368';
 
-// Google Sheets Apps Script webhook
 const SHEET_WEBHOOK =
   'https://script.google.com/macros/s/AKfycbymMR_sc62FrCdyXkD5j7q9tNCKqH-ot7ElKR0RWFTUwcWMU7032-WxHEygEaLAYIs/exec';
 
 const COMPLAINTS_FILE = path.join(__dirname, 'complaints.json');
+
+const supabase =
+  SUPABASE_URL && SUPABASE_SECRET_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SECRET_KEY)
+    : null;
 
 /* =========================================================
    PATIENT MESSAGES
@@ -96,6 +99,59 @@ function saveComplaints(data) {
 let awaitingComplaint = loadComplaints();
 
 /* =========================================================
+   SUPABASE DATABASE
+========================================================= */
+
+async function saveMessageToSupabase({
+  phone,
+  direction,
+  message,
+  rating = null,
+  status = null,
+  googleReviewSent = false,
+  complaint = null,
+  replied = false,
+  replyMessage = null,
+  whatsappMessageId = null
+}) {
+  if (!supabase) {
+    console.error(
+      'Supabase is not connected. Check SUPABASE_URL and SUPABASE_SECRET_KEY.'
+    );
+    return;
+  }
+
+  try {
+    const { error } = await supabase
+      .from('messages')
+      .insert({
+        phone: `+${phone}`,
+        direction,
+        message,
+        rating,
+        status,
+        google_review_sent: googleReviewSent,
+        complaint,
+        replied,
+        reply_message: replyMessage,
+        whatsapp_message_id: whatsappMessageId,
+        created_timestamp: new Date().toISOString()
+      });
+
+    if (error) {
+      console.error('Supabase save error:', error.message);
+      return;
+    }
+
+    console.log(
+      `Supabase saved: ${direction} | +${phone} | ${status || 'message'}`
+    );
+  } catch (error) {
+    console.error('Supabase connection error:', error.message);
+  }
+}
+
+/* =========================================================
    SEND WHATSAPP MESSAGE
 ========================================================= */
 
@@ -150,7 +206,22 @@ async function sendMessage(to, message) {
           response.statusCode >= 200 &&
           response.statusCode < 300
         ) {
-          resolve(responseData);
+          let whatsappMessageId = null;
+
+          try {
+            const parsed = JSON.parse(responseData);
+            whatsappMessageId = parsed.messages?.[0]?.id || null;
+          } catch (error) {
+            console.error(
+              'Could not read WhatsApp message ID:',
+              error.message
+            );
+          }
+
+          resolve({
+            responseData,
+            whatsappMessageId
+          });
         } else {
           reject(
             new Error(
@@ -172,7 +243,6 @@ async function sendMessage(to, message) {
 ========================================================= */
 
 async function forwardIncomingMessage(patientNumber, patientMessage) {
-  // Prevent copies being sent back when Dr Mina messages the number.
   if (patientNumber === DR_MINA_PERSONAL) {
     return;
   }
@@ -195,13 +265,25 @@ async function forwardIncomingMessage(patientNumber, patientMessage) {
 async function sendPatientReplyWithCopy(
   patientNumber,
   replyMessage,
-  actionDescription
+  actionDescription,
+  databaseOptions = {}
 ) {
-  // Send the actual reply to the patient.
-  await sendMessage(patientNumber, replyMessage);
+  const result = await sendMessage(patientNumber, replyMessage);
 
-  // Avoid sending a duplicate copy back to Dr Mina
-  // when she is personally testing from her own number.
+  await saveMessageToSupabase({
+    phone: patientNumber,
+    direction: 'outgoing',
+    message: replyMessage,
+    rating: databaseOptions.rating ?? null,
+    status: databaseOptions.status || 'sent',
+    googleReviewSent:
+      databaseOptions.googleReviewSent || false,
+    complaint: databaseOptions.complaint || null,
+    replied: true,
+    replyMessage,
+    whatsappMessageId: result.whatsappMessageId
+  });
+
   if (patientNumber === DR_MINA_PERSONAL) {
     return;
   }
@@ -296,8 +378,6 @@ const server = http.createServer(async (request, response) => {
     `http://${request.headers.host}`
   );
 
-  /* Privacy policy */
-
   if (
     request.method === 'GET' &&
     url.pathname === '/privacy.html'
@@ -364,7 +444,6 @@ const server = http.createServer(async (request, response) => {
             ?.changes?.[0]
             ?.value?.messages?.[0];
 
-        // Delivery and read receipts do not contain a message.
         if (message && message.type === 'text') {
           const from = message.from;
           const text = message.text.body.trim();
@@ -372,15 +451,40 @@ const server = http.createServer(async (request, response) => {
 
           console.log(`Message from ${from}: ${text}`);
 
-          // Send Dr Mina a copy of every patient message.
+          await saveMessageToSupabase({
+            phone: from,
+            direction: 'incoming',
+            message: text,
+            rating:
+              Number.isInteger(rating) &&
+              rating >= 1 &&
+              rating <= 5
+                ? rating
+                : null,
+            status: 'received',
+            replied: false,
+            whatsappMessageId: message.id || null
+          });
+
           await forwardIncomingMessage(from, text);
 
           awaitingComplaint = loadComplaints();
 
-          /* Patient is sending written feedback after rating 1–3 */
+          /* Written feedback after rating 1–3 */
 
           if (awaitingComplaint[from]) {
             const originalRating = awaitingComplaint[from];
+
+            await saveMessageToSupabase({
+              phone: from,
+              direction: 'incoming',
+              message: text,
+              rating: originalRating,
+              status: 'negative_feedback',
+              complaint: text,
+              replied: false,
+              whatsappMessageId: message.id || null
+            });
 
             await logToSheet(
               from,
@@ -392,7 +496,12 @@ const server = http.createServer(async (request, response) => {
             await sendPatientReplyWithCopy(
               from,
               MSG_FEEDBACK_THANK_YOU,
-              `Written feedback received following a rating of ${originalRating}/5. Final acknowledgement sent.`
+              `Written feedback received following a rating of ${originalRating}/5. Final acknowledgement sent.`,
+              {
+                rating: originalRating,
+                status: 'feedback_acknowledged',
+                complaint: text
+              }
             );
 
             delete awaitingComplaint[from];
@@ -403,20 +512,22 @@ const server = http.createServer(async (request, response) => {
             );
           }
 
-          /* Patient has sent a rating from 1 to 5 */
+          /* Rating from 1 to 5 */
 
           else if (
             Number.isInteger(rating) &&
             rating >= 1 &&
             rating <= 5
           ) {
-            /* Rating 1–3 */
-
             if (rating <= 3) {
               await sendPatientReplyWithCopy(
                 from,
                 MSG_NEGATIVE,
-                `Negative rating received: ${rating}/5. The patient was asked to explain the experience.`
+                `Negative rating received: ${rating}/5. The patient was asked to explain the experience.`,
+                {
+                  rating,
+                  status: 'awaiting_feedback'
+                }
               );
 
               awaitingComplaint[from] = rating;
@@ -432,15 +543,16 @@ const server = http.createServer(async (request, response) => {
               console.log(
                 `Rating ${rating}/5 received from ${from}; awaiting written feedback`
               );
-            }
-
-            /* Rating 4–5 */
-
-            else {
+            } else {
               await sendPatientReplyWithCopy(
                 from,
                 MSG_POSITIVE,
-                `Positive rating received: ${rating}/5. The Google review link was sent.`
+                `Positive rating received: ${rating}/5. The Google review link was sent.`,
+                {
+                  rating,
+                  status: 'google_review_sent',
+                  googleReviewSent: true
+                }
               );
 
               await logToSheet(
@@ -456,7 +568,7 @@ const server = http.createServer(async (request, response) => {
             }
           }
 
-          /* Any message other than a rating */
+          /* Any other message */
 
           else {
             console.log(
@@ -471,7 +583,6 @@ const server = http.createServer(async (request, response) => {
         );
       }
 
-      // Meta expects a quick successful response.
       response.writeHead(200);
       response.end('OK');
     });
@@ -493,4 +604,10 @@ server.listen(PORT, () => {
   console.log(
     `Dr Mina Review Assistant running on port ${PORT}`
   );
+
+  if (supabase) {
+    console.log('Supabase database connected.');
+  } else {
+    console.error('Supabase database is not connected.');
+  }
 });
