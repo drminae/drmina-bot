@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
 /* =========================================================
@@ -17,6 +18,13 @@ const WA_API_VERSION = process.env.WA_API_VERSION || 'v25.0';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
+const INBOX_USERNAME = process.env.INBOX_USERNAME;
+const INBOX_PASSWORD = process.env.INBOX_PASSWORD;
+const SESSION_SECRET =
+  process.env.SESSION_SECRET ||
+  INBOX_PASSWORD ||
+  'change-this-in-render';
+
 const GOOGLE_REVIEW_LINK =
   'https://g.page/r/CUs38k2cmQ1UEBM/review';
 
@@ -26,6 +34,7 @@ const SHEET_WEBHOOK =
   'https://script.google.com/macros/s/AKfycbymMR_sc62FrCdyXkD5j7q9tNCKqH-ot7ElKR0RWFTUwcWMU7032-WxHEygEaLAYIs/exec';
 
 const COMPLAINTS_FILE = path.join(__dirname, 'complaints.json');
+const INBOX_FILE = path.join(__dirname, 'inbox.html');
 
 const supabase =
   SUPABASE_URL && SUPABASE_SECRET_KEY
@@ -37,32 +46,32 @@ const supabase =
 ========================================================= */
 
 const MSG_NEGATIVE =
-  `Thank you for your honest feedback. 🙏\n\n` +
+  `Thank you for your honest feedback. ðŸ™\n\n` +
   `I am truly sorry that your experience did not meet your expectations. ` +
   `This is not the standard of care I strive to provide.\n\n` +
-  `👉 *What specifically made you feel this way, and how can I improve?*\n\n` +
+  `ðŸ‘‰ *What specifically made you feel this way, and how can I improve?*\n\n` +
   `I take every piece of feedback very seriously and personally. ` +
-  `I value your trust and truly hope to have the chance to make it right. 💙\n\n` +
-  `— Dr. Mina`;
+  `I value your trust and truly hope to have the chance to make it right. ðŸ’™\n\n` +
+  `â€” Dr. Mina`;
 
 const MSG_POSITIVE =
-  `Wonderful! Thank you so much! 🌟\n\n` +
-  `I am so happy to hear that you had a great experience! 😊 ` +
+  `Wonderful! Thank you so much! ðŸŒŸ\n\n` +
+  `I am so happy to hear that you had a great experience! ðŸ˜Š ` +
   `It truly means the world to me.\n\n` +
-  `If you have a moment, I would really appreciate it if you could share your kind review — ` +
-  `it helps other parents find the best pediatric dentist for their little ones. 🦷\n\n` +
-  `👉 ${GOOGLE_REVIEW_LINK}\n\n` +
-  `It only takes 1 minute and makes a huge difference. Thank you! 🙏\n\n` +
-  `— Dr. Mina`;
+  `If you have a moment, I would really appreciate it if you could share your kind review â€” ` +
+  `it helps other parents find the best pediatric dentist for their little ones. ðŸ¦·\n\n` +
+  `ðŸ‘‰ ${GOOGLE_REVIEW_LINK}\n\n` +
+  `It only takes 1 minute and makes a huge difference. Thank you! ðŸ™\n\n` +
+  `â€” Dr. Mina`;
 
 const MSG_FEEDBACK_THANK_YOU =
-  `Thank you for sharing this with me. 🙏\n\n` +
+  `Thank you for sharing this with me. ðŸ™\n\n` +
   `I truly appreciate your honesty and will personally work on improving this. ` +
-  `I hope to have the opportunity to provide you with a better experience in the future. 💙\n\n` +
-  `— Dr. Mina`;
+  `I hope to have the opportunity to provide you with a better experience in the future. ðŸ’™\n\n` +
+  `â€” Dr. Mina`;
 
 /* =========================================================
-   HELPER FUNCTIONS
+   GENERAL HELPERS
 ========================================================= */
 
 function getDubaiTime() {
@@ -96,7 +105,259 @@ function saveComplaints(data) {
   }
 }
 
+function sendJson(response, statusCode, data) {
+  response.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store'
+  });
+  response.end(JSON.stringify(data));
+}
+
+function readRequestBody(request) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+
+    request.on('data', chunk => {
+      body += chunk;
+
+      if (body.length > 1_000_000) {
+        reject(new Error('Request body is too large.'));
+        request.destroy();
+      }
+    });
+
+    request.on('end', () => resolve(body));
+    request.on('error', reject);
+  });
+}
+
+function parseCookies(request) {
+  const result = {};
+  const rawCookie = request.headers.cookie || '';
+
+  rawCookie.split(';').forEach(part => {
+    const separator = part.indexOf('=');
+
+    if (separator === -1) {
+      return;
+    }
+
+    const key = part.slice(0, separator).trim();
+    const value = part.slice(separator + 1).trim();
+
+    if (key) {
+      result[key] = decodeURIComponent(value);
+    }
+  });
+
+  return result;
+}
+
+function safeEqual(valueA, valueB) {
+  const bufferA = Buffer.from(String(valueA || ''));
+  const bufferB = Buffer.from(String(valueB || ''));
+
+  if (bufferA.length !== bufferB.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(bufferA, bufferB);
+}
+
+function signSession(payload) {
+  const encodedPayload = Buffer.from(
+    JSON.stringify(payload),
+    'utf8'
+  ).toString('base64url');
+
+  const signature = crypto
+    .createHmac('sha256', SESSION_SECRET)
+    .update(encodedPayload)
+    .digest('base64url');
+
+  return `${encodedPayload}.${signature}`;
+}
+
+function verifySession(token) {
+  try {
+    const [encodedPayload, signature] = String(token || '').split('.');
+
+    if (!encodedPayload || !signature) {
+      return null;
+    }
+
+    const expectedSignature = crypto
+      .createHmac('sha256', SESSION_SECRET)
+      .update(encodedPayload)
+      .digest('base64url');
+
+    if (!safeEqual(signature, expectedSignature)) {
+      return null;
+    }
+
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, 'base64url').toString('utf8')
+    );
+
+    if (!payload.exp || Date.now() > payload.exp) {
+      return null;
+    }
+
+    return payload;
+  } catch (error) {
+    return null;
+  }
+}
+
+function isAuthenticated(request) {
+  const cookies = parseCookies(request);
+  return Boolean(verifySession(cookies.drmina_session));
+}
+
+function requireAuthentication(request, response, apiRoute = false) {
+  if (isAuthenticated(request)) {
+    return true;
+  }
+
+  if (apiRoute) {
+    sendJson(response, 401, {
+      success: false,
+      error: 'Please log in again.'
+    });
+  } else {
+    response.writeHead(302, {
+      Location: '/login'
+    });
+    response.end();
+  }
+
+  return false;
+}
+
+function normalizePhone(phone) {
+  return String(phone || '').replace(/\D/g, '');
+}
+
+function escapeHtml(text) {
+  return String(text || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
 let awaitingComplaint = loadComplaints();
+
+/* =========================================================
+   LOGIN PAGE
+========================================================= */
+
+function renderLoginPage(message = '') {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dr Mina Inbox Login</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, #dff8f1, transparent 42%),
+        linear-gradient(145deg, #f4fbf9, #edf4ff);
+      color: #17324d;
+    }
+    .card {
+      width: min(430px, 100%);
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid #dce9e5;
+      border-radius: 24px;
+      padding: 34px;
+      box-shadow: 0 24px 60px rgba(22, 61, 87, 0.14);
+    }
+    .logo {
+      width: 64px;
+      height: 64px;
+      border-radius: 20px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 22px;
+      font-size: 30px;
+      background: #e5f8f2;
+    }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    p { margin: 0 0 26px; color: #607287; line-height: 1.5; }
+    label {
+      display: block;
+      margin: 15px 0 7px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    input {
+      width: 100%;
+      padding: 14px 15px;
+      border: 1px solid #cddbd7;
+      border-radius: 13px;
+      font-size: 16px;
+      outline: none;
+    }
+    input:focus {
+      border-color: #1f9d7a;
+      box-shadow: 0 0 0 4px rgba(31, 157, 122, 0.12);
+    }
+    button {
+      width: 100%;
+      margin-top: 22px;
+      padding: 14px 18px;
+      border: 0;
+      border-radius: 13px;
+      background: #178a6a;
+      color: #fff;
+      font-weight: 800;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    button:hover { background: #117457; }
+    .error {
+      padding: 11px 13px;
+      border-radius: 11px;
+      margin-bottom: 14px;
+      color: #9d2631;
+      background: #fff0f1;
+      border: 1px solid #ffd3d7;
+      font-size: 14px;
+    }
+    .footer {
+      margin-top: 18px;
+      font-size: 12px;
+      text-align: center;
+      color: #8291a1;
+    }
+  </style>
+</head>
+<body>
+  <form class="card" method="POST" action="/login">
+    <div class="logo">ðŸ¦·</div>
+    <h1>Dr Mina Inbox</h1>
+    <p>Secure access to your WhatsApp patient conversations.</p>
+    ${message ? `<div class="error">${escapeHtml(message)}</div>` : ''}
+    <label for="username">Username</label>
+    <input id="username" name="username" autocomplete="username" required autofocus>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Log in</button>
+    <div class="footer">Private clinic system</div>
+  </form>
+</body>
+</html>`;
+}
 
 /* =========================================================
    SUPABASE DATABASE
@@ -122,10 +383,12 @@ async function saveMessageToSupabase({
   }
 
   try {
+    const cleanPhone = normalizePhone(phone);
+
     const { error } = await supabase
       .from('messages')
       .insert({
-        phone: `+${phone}`,
+        phone: `+${cleanPhone}`,
         direction,
         message,
         rating,
@@ -144,7 +407,7 @@ async function saveMessageToSupabase({
     }
 
     console.log(
-      `Supabase saved: ${direction} | +${phone} | ${status || 'message'}`
+      `Supabase saved: ${direction} | +${cleanPhone} | ${status || 'message'}`
     );
   } catch (error) {
     console.error('Supabase connection error:', error.message);
@@ -168,10 +431,16 @@ async function sendMessage(to, message) {
     );
   }
 
+  const cleanPhone = normalizePhone(to);
+
+  if (!cleanPhone) {
+    throw new Error('The WhatsApp phone number is invalid.');
+  }
+
   const body = JSON.stringify({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
-    to,
+    to: cleanPhone,
     type: 'text',
     text: {
       preview_url: true,
@@ -191,20 +460,20 @@ async function sendMessage(to, message) {
   };
 
   return new Promise((resolve, reject) => {
-    const request = https.request(options, response => {
+    const outgoingRequest = https.request(options, apiResponse => {
       let responseData = '';
 
-      response.on('data', chunk => {
+      apiResponse.on('data', chunk => {
         responseData += chunk;
       });
 
-      response.on('end', () => {
-        console.log('WhatsApp status:', response.statusCode);
+      apiResponse.on('end', () => {
+        console.log('WhatsApp status:', apiResponse.statusCode);
         console.log('WhatsApp response:', responseData);
 
         if (
-          response.statusCode >= 200 &&
-          response.statusCode < 300
+          apiResponse.statusCode >= 200 &&
+          apiResponse.statusCode < 300
         ) {
           let whatsappMessageId = null;
 
@@ -232,9 +501,9 @@ async function sendMessage(to, message) {
       });
     });
 
-    request.on('error', reject);
-    request.write(body);
-    request.end();
+    outgoingRequest.on('error', reject);
+    outgoingRequest.write(body);
+    outgoingRequest.end();
   });
 }
 
@@ -248,11 +517,11 @@ async function forwardIncomingMessage(patientNumber, patientMessage) {
   }
 
   const notification =
-    `📥 *Patient Message Received*\n\n` +
-    `📅 ${getDubaiTime()}\n\n` +
-    `👤 Patient\n` +
+    `ðŸ“¥ *Patient Message Received*\n\n` +
+    `ðŸ“… ${getDubaiTime()}\n\n` +
+    `ðŸ‘¤ Patient\n` +
     `+${patientNumber}\n\n` +
-    `💬 Message\n` +
+    `ðŸ’¬ Message\n` +
     `"${patientMessage}"`;
 
   await sendMessage(DR_MINA_PERSONAL, notification);
@@ -285,17 +554,17 @@ async function sendPatientReplyWithCopy(
   });
 
   if (patientNumber === DR_MINA_PERSONAL) {
-    return;
+    return result;
   }
 
   const notification =
-    `📤 *Reply Sent to Patient*\n\n` +
-    `📅 ${getDubaiTime()}\n\n` +
-    `👤 Patient\n` +
+    `ðŸ“¤ *Reply Sent to Patient*\n\n` +
+    `ðŸ“… ${getDubaiTime()}\n\n` +
+    `ðŸ‘¤ Patient\n` +
     `+${patientNumber}\n\n` +
-    `✅ Action\n` +
+    `âœ… Action\n` +
     `${actionDescription}\n\n` +
-    `💬 Reply sent\n` +
+    `ðŸ’¬ Reply sent\n` +
     `${replyMessage}`;
 
   await sendMessage(DR_MINA_PERSONAL, notification);
@@ -303,6 +572,8 @@ async function sendPatientReplyWithCopy(
   console.log(
     `Outgoing reply copied for patient ${patientNumber}`
   );
+
+  return result;
 }
 
 /* =========================================================
@@ -332,14 +603,14 @@ async function logToSheet(phone, rating, feedback, type) {
     };
 
     return new Promise(resolve => {
-      const request = https.request(options, response => {
+      const sheetRequest = https.request(options, sheetResponse => {
         let responseData = '';
 
-        response.on('data', chunk => {
+        sheetResponse.on('data', chunk => {
           responseData += chunk;
         });
 
-        response.on('end', () => {
+        sheetResponse.on('end', () => {
           console.log(
             `Google Sheet updated: ${type} | +${phone} | Rating: ${rating}`
           );
@@ -348,7 +619,7 @@ async function logToSheet(phone, rating, feedback, type) {
         });
       });
 
-      request.on('error', error => {
+      sheetRequest.on('error', error => {
         console.error(
           'Google Sheets connection error:',
           error.message
@@ -357,14 +628,115 @@ async function logToSheet(phone, rating, feedback, type) {
         resolve();
       });
 
-      request.write(payload);
-      request.end();
+      sheetRequest.write(payload);
+      sheetRequest.end();
     });
   } catch (error) {
     console.error(
       'Google Sheets logging error:',
       error.message
     );
+  }
+}
+
+/* =========================================================
+   INBOX API
+========================================================= */
+
+async function getInboxMessages(response, url) {
+  if (!supabase) {
+    sendJson(response, 503, {
+      success: false,
+      error: 'Supabase is not connected.'
+    });
+    return;
+  }
+
+  const phone = normalizePhone(url.searchParams.get('phone'));
+  const limitRequested = Number(url.searchParams.get('limit') || 1000);
+  const limit = Math.min(Math.max(limitRequested, 1), 2000);
+
+  let query = supabase
+    .from('messages')
+    .select(
+      'phone,patient_name,direction,message,rating,status,google_review_sent,complaint,replied,reply_message,whatsapp_message_id,created_timestamp'
+    )
+    .order('created_timestamp', { ascending: true })
+    .limit(limit);
+
+  if (phone) {
+    query = query.eq('phone', `+${phone}`);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Inbox fetch error:', error.message);
+    sendJson(response, 500, {
+      success: false,
+      error: error.message
+    });
+    return;
+  }
+
+  sendJson(response, 200, {
+    success: true,
+    messages: data || []
+  });
+}
+
+async function handleInboxReply(request, response) {
+  try {
+    const rawBody = await readRequestBody(request);
+    const data = JSON.parse(rawBody || '{}');
+
+    const phone = normalizePhone(data.phone);
+    const message = String(data.message || '').trim();
+
+    if (!phone) {
+      sendJson(response, 400, {
+        success: false,
+        error: 'Please select a patient first.'
+      });
+      return;
+    }
+
+    if (!message) {
+      sendJson(response, 400, {
+        success: false,
+        error: 'The reply cannot be empty.'
+      });
+      return;
+    }
+
+    if (message.length > 4096) {
+      sendJson(response, 400, {
+        success: false,
+        error: 'The reply is too long.'
+      });
+      return;
+    }
+
+    const result = await sendPatientReplyWithCopy(
+      phone,
+      message,
+      'Manual reply sent from Dr Mina Inbox.',
+      {
+        status: 'manual_inbox_reply'
+      }
+    );
+
+    sendJson(response, 200, {
+      success: true,
+      whatsappMessageId: result?.whatsappMessageId || null
+    });
+  } catch (error) {
+    console.error('Inbox reply error:', error.message);
+
+    sendJson(response, 500, {
+      success: false,
+      error: error.message
+    });
   }
 }
 
@@ -377,6 +749,147 @@ const server = http.createServer(async (request, response) => {
     request.url,
     `http://${request.headers.host}`
   );
+
+  /* Health check */
+
+  if (request.method === 'GET' && url.pathname === '/health') {
+    sendJson(response, 200, {
+      success: true,
+      service: 'Dr Mina Review Assistant'
+    });
+    return;
+  }
+
+  /* Login page */
+
+  if (request.method === 'GET' && url.pathname === '/login') {
+    if (isAuthenticated(request)) {
+      response.writeHead(302, { Location: '/inbox' });
+      response.end();
+      return;
+    }
+
+    response.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store'
+    });
+    response.end(renderLoginPage());
+    return;
+  }
+
+  /* Login submission */
+
+  if (request.method === 'POST' && url.pathname === '/login') {
+    try {
+      const rawBody = await readRequestBody(request);
+      const form = new URLSearchParams(rawBody);
+      const username = form.get('username') || '';
+      const password = form.get('password') || '';
+
+      const loginIsValid =
+        INBOX_USERNAME &&
+        INBOX_PASSWORD &&
+        safeEqual(username, INBOX_USERNAME) &&
+        safeEqual(password, INBOX_PASSWORD);
+
+      if (!loginIsValid) {
+        response.writeHead(401, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store'
+        });
+        response.end(
+          renderLoginPage('Incorrect username or password.')
+        );
+        return;
+      }
+
+      const token = signSession({
+        username,
+        exp: Date.now() + 24 * 60 * 60 * 1000
+      });
+
+      response.writeHead(302, {
+        Location: '/inbox',
+        'Set-Cookie':
+          `drmina_session=${encodeURIComponent(token)}; ` +
+          'HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400',
+        'Cache-Control': 'no-store'
+      });
+      response.end();
+    } catch (error) {
+      response.writeHead(400, {
+        'Content-Type': 'text/html; charset=utf-8'
+      });
+      response.end(renderLoginPage('Unable to log in.'));
+    }
+
+    return;
+  }
+
+  /* Logout */
+
+  if (request.method === 'POST' && url.pathname === '/logout') {
+    response.writeHead(302, {
+      Location: '/login',
+      'Set-Cookie':
+        'drmina_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'
+    });
+    response.end();
+    return;
+  }
+
+  /* Inbox page */
+
+  if (request.method === 'GET' && url.pathname === '/inbox') {
+    if (!requireAuthentication(request, response)) {
+      return;
+    }
+
+    if (!fs.existsSync(INBOX_FILE)) {
+      response.writeHead(500, {
+        'Content-Type': 'text/plain; charset=utf-8'
+      });
+      response.end('inbox.html was not found.');
+      return;
+    }
+
+    response.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store'
+    });
+    response.end(fs.readFileSync(INBOX_FILE));
+    return;
+  }
+
+  /* Inbox message API */
+
+  if (
+    request.method === 'GET' &&
+    url.pathname === '/api/inbox/messages'
+  ) {
+    if (!requireAuthentication(request, response, true)) {
+      return;
+    }
+
+    await getInboxMessages(response, url);
+    return;
+  }
+
+  /* Inbox reply API */
+
+  if (
+    request.method === 'POST' &&
+    url.pathname === '/api/inbox/reply'
+  ) {
+    if (!requireAuthentication(request, response, true)) {
+      return;
+    }
+
+    await handleInboxReply(request, response);
+    return;
+  }
+
+  /* Privacy page */
 
   if (
     request.method === 'GET' &&
@@ -398,7 +911,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  /* Meta webhook verification */
+  /* Meta webhook verification or home page */
 
   if (request.method === 'GET') {
     const mode = url.searchParams.get('hub.mode');
@@ -415,183 +928,182 @@ const server = http.createServer(async (request, response) => {
       response.end(challenge);
     } else {
       response.writeHead(200, {
-        'Content-Type': 'text/html'
+        'Content-Type': 'text/html; charset=utf-8'
       });
 
       response.end(
-        '<h1>Dr Mina Review Assistant is running!</h1>'
+        '<h1>Dr Mina Review Assistant is running!</h1>' +
+        '<p><a href="/inbox">Open secure inbox</a></p>'
       );
     }
 
     return;
   }
 
-  /* Receive WhatsApp messages */
+  /* Receive WhatsApp webhook messages only */
 
-  if (request.method === 'POST') {
-    let body = '';
+  if (request.method === 'POST' && url.pathname === '/') {
+    try {
+      const body = await readRequestBody(request);
+      const data = JSON.parse(body);
 
-    request.on('data', chunk => {
-      body += chunk;
-    });
+      const message =
+        data.entry?.[0]
+          ?.changes?.[0]
+          ?.value?.messages?.[0];
 
-    request.on('end', async () => {
-      try {
-        const data = JSON.parse(body);
+      if (message && message.type === 'text') {
+        const from = message.from;
+        const text = message.text.body.trim();
+        const rating = Number(text);
 
-        const message =
-          data.entry?.[0]
-            ?.changes?.[0]
-            ?.value?.messages?.[0];
+        console.log(`Message from ${from}: ${text}`);
 
-        if (message && message.type === 'text') {
-          const from = message.from;
-          const text = message.text.body.trim();
-          const rating = Number(text);
+        await saveMessageToSupabase({
+          phone: from,
+          direction: 'incoming',
+          message: text,
+          rating:
+            Number.isInteger(rating) &&
+            rating >= 1 &&
+            rating <= 5
+              ? rating
+              : null,
+          status: 'received',
+          replied: false,
+          whatsappMessageId: message.id || null
+        });
 
-          console.log(`Message from ${from}: ${text}`);
+        await forwardIncomingMessage(from, text);
+
+        awaitingComplaint = loadComplaints();
+
+        /* Written feedback after rating 1â€“3 */
+
+        if (awaitingComplaint[from]) {
+          const originalRating = awaitingComplaint[from];
 
           await saveMessageToSupabase({
             phone: from,
             direction: 'incoming',
             message: text,
-            rating:
-              Number.isInteger(rating) &&
-              rating >= 1 &&
-              rating <= 5
-                ? rating
-                : null,
-            status: 'received',
+            rating: originalRating,
+            status: 'negative_feedback',
+            complaint: text,
             replied: false,
             whatsappMessageId: message.id || null
           });
 
-          await forwardIncomingMessage(from, text);
+          await logToSheet(
+            from,
+            originalRating,
+            text,
+            'NEGATIVE FEEDBACK'
+          );
 
-          awaitingComplaint = loadComplaints();
-
-          /* Written feedback after rating 1–3 */
-
-          if (awaitingComplaint[from]) {
-            const originalRating = awaitingComplaint[from];
-
-            await saveMessageToSupabase({
-              phone: from,
-              direction: 'incoming',
-              message: text,
+          await sendPatientReplyWithCopy(
+            from,
+            MSG_FEEDBACK_THANK_YOU,
+            `Written feedback received following a rating of ${originalRating}/5. Final acknowledgement sent.`,
+            {
               rating: originalRating,
-              status: 'negative_feedback',
-              complaint: text,
-              replied: false,
-              whatsappMessageId: message.id || null
-            });
+              status: 'feedback_acknowledged',
+              complaint: text
+            }
+          );
 
-            await logToSheet(
-              from,
-              originalRating,
-              text,
-              'NEGATIVE FEEDBACK'
-            );
+          delete awaitingComplaint[from];
+          saveComplaints(awaitingComplaint);
 
+          console.log(
+            `Feedback process completed for ${from}`
+          );
+        }
+
+        /* Rating from 1 to 5 */
+
+        else if (
+          Number.isInteger(rating) &&
+          rating >= 1 &&
+          rating <= 5
+        ) {
+          if (rating <= 3) {
             await sendPatientReplyWithCopy(
               from,
-              MSG_FEEDBACK_THANK_YOU,
-              `Written feedback received following a rating of ${originalRating}/5. Final acknowledgement sent.`,
+              MSG_NEGATIVE,
+              `Negative rating received: ${rating}/5. The patient was asked to explain the experience.`,
               {
-                rating: originalRating,
-                status: 'feedback_acknowledged',
-                complaint: text
+                rating,
+                status: 'awaiting_feedback'
               }
             );
 
-            delete awaitingComplaint[from];
+            awaitingComplaint[from] = rating;
             saveComplaints(awaitingComplaint);
 
-            console.log(
-              `Feedback process completed for ${from}`
+            await logToSheet(
+              from,
+              rating,
+              'Awaiting written feedback...',
+              'NEGATIVE'
             );
-          }
 
-          /* Rating from 1 to 5 */
-
-          else if (
-            Number.isInteger(rating) &&
-            rating >= 1 &&
-            rating <= 5
-          ) {
-            if (rating <= 3) {
-              await sendPatientReplyWithCopy(
-                from,
-                MSG_NEGATIVE,
-                `Negative rating received: ${rating}/5. The patient was asked to explain the experience.`,
-                {
-                  rating,
-                  status: 'awaiting_feedback'
-                }
-              );
-
-              awaitingComplaint[from] = rating;
-              saveComplaints(awaitingComplaint);
-
-              await logToSheet(
-                from,
-                rating,
-                'Awaiting written feedback...',
-                'NEGATIVE'
-              );
-
-              console.log(
-                `Rating ${rating}/5 received from ${from}; awaiting written feedback`
-              );
-            } else {
-              await sendPatientReplyWithCopy(
-                from,
-                MSG_POSITIVE,
-                `Positive rating received: ${rating}/5. The Google review link was sent.`,
-                {
-                  rating,
-                  status: 'google_review_sent',
-                  googleReviewSent: true
-                }
-              );
-
-              await logToSheet(
-                from,
-                rating,
-                '',
-                'POSITIVE'
-              );
-
-              console.log(
-                `Positive rating ${rating}/5 received from ${from}`
-              );
-            }
-          }
-
-          /* Any other message */
-
-          else {
             console.log(
-              `General message received and copied from ${from}`
+              `Rating ${rating}/5 received from ${from}; awaiting written feedback`
+            );
+          } else {
+            await sendPatientReplyWithCopy(
+              from,
+              MSG_POSITIVE,
+              `Positive rating received: ${rating}/5. The Google review link was sent.`,
+              {
+                rating,
+                status: 'google_review_sent',
+                googleReviewSent: true
+              }
+            );
+
+            await logToSheet(
+              from,
+              rating,
+              '',
+              'POSITIVE'
+            );
+
+            console.log(
+              `Positive rating ${rating}/5 received from ${from}`
             );
           }
         }
-      } catch (error) {
-        console.error(
-          'Message-processing error:',
-          error.message
-        );
+
+        /* Any other message */
+
+        else {
+          console.log(
+            `General message received and copied from ${from}`
+          );
+        }
       }
 
       response.writeHead(200);
       response.end('OK');
-    });
+    } catch (error) {
+      console.error(
+        'Message-processing error:',
+        error.message
+      );
+
+      response.writeHead(200);
+      response.end('OK');
+    }
 
     return;
   }
 
-  response.writeHead(200);
-  response.end('OK');
+  response.writeHead(404, {
+    'Content-Type': 'text/plain; charset=utf-8'
+  });
+  response.end('Not found');
 });
 
 /* =========================================================
@@ -609,5 +1121,11 @@ server.listen(PORT, () => {
     console.log('Supabase database connected.');
   } else {
     console.error('Supabase database is not connected.');
+  }
+
+  if (!INBOX_USERNAME || !INBOX_PASSWORD) {
+    console.error(
+      'Inbox login is not configured. Add INBOX_USERNAME and INBOX_PASSWORD in Render.'
+    );
   }
 });
