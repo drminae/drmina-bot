@@ -1,1 +1,748 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dr Mina Inbox</title>
+  <style>
+    :root {
+      --green: #128c7e;
+      --green-dark: #08776b;
+      --green-soft: #dcf8c6;
+      --ink: #1f2d3d;
+      --muted: #6d7c8c;
+      --line: #dfe8e5;
+      --panel: #ffffff;
+      --background: #eef4f2;
+      --incoming: #ffffff;
+      --outgoing: #d9fdd3;
+      --danger: #b42332;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background: var(--background);
+    }
+
+    button, input, textarea { font: inherit; }
+
+    .app {
+      height: 100vh;
+      display: grid;
+      grid-template-columns: 365px 1fr;
+      background: var(--panel);
+    }
+
+    .sidebar {
+      min-width: 0;
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+    }
+
+    .sidebar-header {
+      padding: 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      width: 45px;
+      height: 45px;
+      display: grid;
+      place-items: center;
+      border-radius: 15px;
+      background: #e4f6f1;
+      font-size: 23px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .brand small {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+    }
+
+    .logout {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 10px;
+      padding: 8px 10px;
+      cursor: pointer;
+      color: var(--muted);
+    }
+
+    .search {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 13px;
+      outline: none;
+      background: #f8fbfa;
+    }
+
+    .search:focus {
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px rgba(18, 140, 126, 0.10);
+    }
+
+    .conversation-list {
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .conversation-item {
+      width: 100%;
+      border: 0;
+      border-bottom: 1px solid #edf2f0;
+      background: #fff;
+      padding: 14px 16px;
+      text-align: left;
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: 12px;
+    }
+
+    .conversation-item:hover,
+    .conversation-item.active {
+      background: #f1f9f6;
+    }
+
+    .avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #dcece8;
+      color: var(--green-dark);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 15px;
+    }
+
+    .conversation-top {
+      min-width: 0;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .phone {
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .time {
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .preview {
+      margin-top: 5px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 14px;
+    }
+
+    .rating {
+      display: inline-block;
+      margin-top: 5px;
+      font-size: 12px;
+      color: #9a6500;
+      background: #fff6d7;
+      padding: 3px 7px;
+      border-radius: 999px;
+    }
+
+    .chat {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background:
+        linear-gradient(rgba(244, 248, 246, 0.94), rgba(244, 248, 246, 0.94)),
+        radial-gradient(circle at 20% 10%, #dceee9, transparent 30%);
+    }
+
+    .chat-header {
+      height: 77px;
+      flex: 0 0 77px;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 14px 22px;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .chat-header h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .chat-header p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px max(24px, 8vw);
+    }
+
+    .message-row {
+      display: flex;
+      margin: 9px 0;
+    }
+
+    .message-row.outgoing {
+      justify-content: flex-end;
+    }
+
+    .bubble {
+      max-width: min(720px, 78%);
+      padding: 10px 12px 8px;
+      border-radius: 12px;
+      background: var(--incoming);
+      box-shadow: 0 1px 2px rgba(20, 50, 45, 0.10);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      line-height: 1.42;
+    }
+
+    .outgoing .bubble {
+      background: var(--outgoing);
+    }
+
+    .message-meta {
+      margin-top: 6px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 7px;
+      color: #718079;
+      font-size: 10px;
+    }
+
+    .composer {
+      padding: 14px 18px;
+      border-top: 1px solid var(--line);
+      background: #fff;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: end;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 48px;
+      max-height: 160px;
+      resize: vertical;
+      padding: 13px 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px rgba(18, 140, 126, 0.10);
+    }
+
+    .send {
+      min-width: 92px;
+      min-height: 48px;
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 18px;
+      background: var(--green);
+      color: #fff;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .send:hover { background: var(--green-dark); }
+    .send:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .empty,
+    .loading,
+    .error {
+      margin: auto;
+      text-align: center;
+      padding: 30px;
+      color: var(--muted);
+    }
+
+    .error { color: var(--danger); }
+
+    .mobile-back {
+      display: none;
+      border: 0;
+      background: transparent;
+      font-size: 24px;
+      cursor: pointer;
+    }
+
+    .status-bar {
+      padding: 8px 18px;
+      background: #f7faf9;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      min-height: 32px;
+    }
+
+    @media (max-width: 780px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        width: 100%;
+      }
+
+      .chat {
+        display: none;
+      }
+
+      .app.chat-open .sidebar {
+        display: none;
+      }
+
+      .app.chat-open .chat {
+        display: flex;
+      }
+
+      .mobile-back {
+        display: inline-block;
+      }
+
+      .messages {
+        padding: 20px 14px;
+      }
+
+      .bubble {
+        max-width: 88%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app" id="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand-row">
+          <div class="brand">
+            <div class="logo">🦷</div>
+            <div>
+              <h1>Dr Mina Inbox</h1>
+              <small>WhatsApp conversations</small>
+            </div>
+          </div>
+          <form method="POST" action="/logout">
+            <button class="logout" type="submit">Logout</button>
+          </form>
+        </div>
+        <input
+          id="search"
+          class="search"
+          type="search"
+          placeholder="Search by phone or message"
+          autocomplete="off"
+        >
+      </div>
+
+      <div id="conversationList" class="conversation-list">
+        <div class="loading">Loading conversations…</div>
+      </div>
+    </aside>
+
+    <section class="chat">
+      <header class="chat-header">
+        <button id="backButton" class="mobile-back" aria-label="Back">←</button>
+        <div class="avatar" id="chatAvatar">?</div>
+        <div>
+          <h2 id="chatPhone">Select a conversation</h2>
+          <p id="chatSubtitle">Messages will appear here</p>
+        </div>
+      </header>
+
+      <div id="messages" class="messages">
+        <div class="empty">
+          <div style="font-size:52px; margin-bottom:12px;">💬</div>
+          Select a patient from the inbox.
+        </div>
+      </div>
+
+      <form id="composer" class="composer">
+        <textarea
+          id="replyText"
+          placeholder="Type your reply…"
+          disabled
+        ></textarea>
+        <button id="sendButton" class="send" type="submit" disabled>
+          Send
+        </button>
+      </form>
+
+      <div id="statusBar" class="status-bar">
+        Secure inbox connected to your WhatsApp Business API number.
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      messages: [],
+      conversations: [],
+      selectedPhone: null
+    };
+
+    const app = document.getElementById('app');
+    const conversationList = document.getElementById('conversationList');
+    const messagesElement = document.getElementById('messages');
+    const searchInput = document.getElementById('search');
+    const chatPhone = document.getElementById('chatPhone');
+    const chatSubtitle = document.getElementById('chatSubtitle');
+    const chatAvatar = document.getElementById('chatAvatar');
+    const replyText = document.getElementById('replyText');
+    const sendButton = document.getElementById('sendButton');
+    const composer = document.getElementById('composer');
+    const statusBar = document.getElementById('statusBar');
+    const backButton = document.getElementById('backButton');
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function formatTime(timestamp, includeDate = false) {
+      if (!timestamp) return '';
+
+      const date = new Date(timestamp);
+
+      if (Number.isNaN(date.getTime())) return '';
+
+      return new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Dubai',
+        day: includeDate ? '2-digit' : undefined,
+        month: includeDate ? 'short' : undefined,
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(date);
+    }
+
+    function initials(phone) {
+      const digits = String(phone || '').replace(/\D/g, '');
+      return digits.slice(-2) || '?';
+    }
+
+    function buildConversations(messages) {
+      const grouped = new Map();
+
+      messages.forEach(message => {
+        const phone = message.phone;
+
+        if (!phone) return;
+
+        if (!grouped.has(phone)) {
+          grouped.set(phone, {
+            phone,
+            patientName: message.patient_name || '',
+            messages: [],
+            lastMessage: message,
+            rating: null
+          });
+        }
+
+        const conversation = grouped.get(phone);
+        conversation.messages.push(message);
+        conversation.lastMessage = message;
+
+        if (message.patient_name) {
+          conversation.patientName = message.patient_name;
+        }
+
+        if (message.rating) {
+          conversation.rating = message.rating;
+        }
+      });
+
+      return [...grouped.values()].sort((a, b) => {
+        return new Date(b.lastMessage.created_timestamp) -
+          new Date(a.lastMessage.created_timestamp);
+      });
+    }
+
+    function renderConversationList() {
+      const query = searchInput.value.trim().toLowerCase();
+
+      const visible = state.conversations.filter(conversation => {
+        if (!query) return true;
+
+        const messageText = conversation.messages
+          .map(item => item.message || '')
+          .join(' ')
+          .toLowerCase();
+
+        return conversation.phone.toLowerCase().includes(query) ||
+          conversation.patientName.toLowerCase().includes(query) ||
+          messageText.includes(query);
+      });
+
+      if (!visible.length) {
+        conversationList.innerHTML =
+          '<div class="empty">No conversations found.</div>';
+        return;
+      }
+
+      conversationList.innerHTML = visible.map(conversation => {
+        const last = conversation.lastMessage;
+        const name = conversation.patientName || conversation.phone;
+        const direction = last.direction === 'outgoing' ? 'You: ' : '';
+        const active = state.selectedPhone === conversation.phone
+          ? 'active'
+          : '';
+
+        return `
+          <button
+            class="conversation-item ${active}"
+            data-phone="${escapeHtml(conversation.phone)}"
+          >
+            <span class="avatar">${escapeHtml(initials(conversation.phone))}</span>
+            <span style="min-width:0;">
+              <span class="conversation-top">
+                <span class="phone">${escapeHtml(name)}</span>
+                <span class="time">${escapeHtml(formatTime(last.created_timestamp))}</span>
+              </span>
+              <span class="preview">${escapeHtml(direction + (last.message || ''))}</span>
+              ${conversation.rating
+                ? `<span class="rating">⭐ ${escapeHtml(conversation.rating)}/5</span>`
+                : ''}
+            </span>
+          </button>
+        `;
+      }).join('');
+
+      document
+        .querySelectorAll('.conversation-item')
+        .forEach(button => {
+          button.addEventListener('click', () => {
+            selectConversation(button.dataset.phone);
+          });
+        });
+    }
+
+    function selectConversation(phone) {
+      state.selectedPhone = phone;
+      const conversation = state.conversations.find(
+        item => item.phone === phone
+      );
+
+      if (!conversation) return;
+
+      chatPhone.textContent =
+        conversation.patientName || conversation.phone;
+      chatSubtitle.textContent =
+        conversation.patientName
+          ? conversation.phone
+          : `${conversation.messages.length} message(s)`;
+      chatAvatar.textContent = initials(conversation.phone);
+
+      replyText.disabled = false;
+      sendButton.disabled = false;
+
+      renderMessages(conversation.messages);
+      renderConversationList();
+
+      app.classList.add('chat-open');
+      replyText.focus();
+    }
+
+    function renderMessages(messages) {
+      if (!messages.length) {
+        messagesElement.innerHTML =
+          '<div class="empty">No messages in this conversation.</div>';
+        return;
+      }
+
+      messagesElement.innerHTML = messages.map(message => {
+        const direction =
+          message.direction === 'outgoing' ? 'outgoing' : 'incoming';
+
+        const status = message.status
+          ? ` · ${message.status.replaceAll('_', ' ')}`
+          : '';
+
+        return `
+          <div class="message-row ${direction}">
+            <div class="bubble">
+              <div>${escapeHtml(message.message || '')}</div>
+              <div class="message-meta">
+                <span>${escapeHtml(formatTime(message.created_timestamp, true))}</span>
+                <span>${escapeHtml(status)}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      messagesElement.scrollTop = messagesElement.scrollHeight;
+    }
+
+    async function loadMessages({ keepSelection = true } = {}) {
+      try {
+        statusBar.textContent = 'Refreshing inbox…';
+
+        const response = await fetch('/api/inbox/messages', {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/login';
+          return;
+        }
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'Unable to load messages.');
+        }
+
+        state.messages = result.messages || [];
+        state.conversations = buildConversations(state.messages);
+
+        renderConversationList();
+
+        if (keepSelection && state.selectedPhone) {
+          const selectedStillExists = state.conversations.some(
+            item => item.phone === state.selectedPhone
+          );
+
+          if (selectedStillExists) {
+            selectConversation(state.selectedPhone);
+          }
+        }
+
+        statusBar.textContent =
+          `Updated ${new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Dubai',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          }).format(new Date())}`;
+      } catch (error) {
+        statusBar.textContent = error.message;
+        conversationList.innerHTML =
+          `<div class="error">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    composer.addEventListener('submit', async event => {
+      event.preventDefault();
+
+      const message = replyText.value.trim();
+
+      if (!state.selectedPhone || !message) return;
+
+      sendButton.disabled = true;
+      replyText.disabled = true;
+      statusBar.textContent = 'Sending through WhatsApp…';
+
+      try {
+        const response = await fetch('/api/inbox/reply', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            phone: state.selectedPhone,
+            message
+          })
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/login';
+          return;
+        }
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'The message was not sent.');
+        }
+
+        replyText.value = '';
+        statusBar.textContent =
+          'Message sent successfully from your WhatsApp Business number.';
+
+        await loadMessages();
+      } catch (error) {
+        statusBar.textContent = error.message;
+        alert(error.message);
+      } finally {
+        replyText.disabled = false;
+        sendButton.disabled = false;
+        replyText.focus();
+      }
+    });
+
+    replyText.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        composer.requestSubmit();
+      }
+    });
+
+    searchInput.addEventListener('input', renderConversationList);
+
+    backButton.addEventListener('click', () => {
+      app.classList.remove('chat-open');
+    });
+
+    loadMessages({ keepSelection: false });
+
+    setInterval(() => {
+      loadMessages();
+    }, 15000);
+  </script>
+</body>
+</html>
