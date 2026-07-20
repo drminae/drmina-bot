@@ -46,29 +46,29 @@ const supabase =
 ========================================================= */
 
 const MSG_NEGATIVE =
-  `Thank you for your honest feedback. ðŸ™\n\n` +
+  `Thank you for your honest feedback. \u{1F64F}\n\n` +
   `I am truly sorry that your experience did not meet your expectations. ` +
   `This is not the standard of care I strive to provide.\n\n` +
-  `ðŸ‘‰ *What specifically made you feel this way, and how can I improve?*\n\n` +
+  `\u{1F449} *What specifically made you feel this way, and how can I improve?*\n\n` +
   `I take every piece of feedback very seriously and personally. ` +
-  `I value your trust and truly hope to have the chance to make it right. ðŸ’™\n\n` +
-  `â€” Dr. Mina`;
+  `I value your trust and truly hope to have the chance to make it right. \u{1F499}\n\n` +
+  `\u2014 Dr. Mina`;
 
 const MSG_POSITIVE =
-  `Wonderful! Thank you so much! ðŸŒŸ\n\n` +
-  `I am so happy to hear that you had a great experience! ðŸ˜Š ` +
+  `Wonderful! Thank you so much! \u{1F31F}\n\n` +
+  `I am so happy to hear that you had a great experience! \u{1F60A} ` +
   `It truly means the world to me.\n\n` +
-  `If you have a moment, I would really appreciate it if you could share your kind review â€” ` +
-  `it helps other parents find the best pediatric dentist for their little ones. ðŸ¦·\n\n` +
-  `ðŸ‘‰ ${GOOGLE_REVIEW_LINK}\n\n` +
-  `It only takes 1 minute and makes a huge difference. Thank you! ðŸ™\n\n` +
-  `â€” Dr. Mina`;
+  `If you have a moment, I would really appreciate it if you could share your kind review \u2014 ` +
+  `it helps other parents find the best pediatric dentist for their little ones. \u{1F9B7}\n\n` +
+  `\u{1F449} ${GOOGLE_REVIEW_LINK}\n\n` +
+  `It only takes 1 minute and makes a huge difference. Thank you! \u{1F64F}\n\n` +
+  `\u2014 Dr. Mina`;
 
 const MSG_FEEDBACK_THANK_YOU =
-  `Thank you for sharing this with me. ðŸ™\n\n` +
+  `Thank you for sharing this with me. \u{1F64F}\n\n` +
   `I truly appreciate your honesty and will personally work on improving this. ` +
-  `I hope to have the opportunity to provide you with a better experience in the future. ðŸ’™\n\n` +
-  `â€” Dr. Mina`;
+  `I hope to have the opportunity to provide you with a better experience in the future. \u{1F499}\n\n` +
+  `\u2014 Dr. Mina`;
 
 /* =========================================================
    GENERAL HELPERS
@@ -344,7 +344,7 @@ function renderLoginPage(message = '') {
 </head>
 <body>
   <form class="card" method="POST" action="/login">
-    <div class="logo">ðŸ¦·</div>
+    <div class="logo">\u{1F9B7}</div>
     <h1>Dr Mina Inbox</h1>
     <p>Secure access to your WhatsApp patient conversations.</p>
     ${message ? `<div class="error">${escapeHtml(message)}</div>` : ''}
@@ -519,11 +519,11 @@ async function forwardIncomingMessage(patientNumber, patientMessage) {
   }
 
   const notification =
-    `ðŸ“¥ *Patient Message Received*\n\n` +
-    `ðŸ“… ${getDubaiTime()}\n\n` +
-    `ðŸ‘¤ Patient\n` +
+    `\u{1F4E5} *Patient Message Received*\n\n` +
+    `\u{1F4C5} ${getDubaiTime()}\n\n` +
+    `\u{1F464} Patient\n` +
     `+${patientNumber}\n\n` +
-    `ðŸ’¬ Message\n` +
+    `\u{1F4AC} Message\n` +
     `"${patientMessage}"`;
 
   await sendMessage(DR_MINA_PERSONAL, notification);
@@ -560,13 +560,13 @@ async function sendPatientReplyWithCopy(
   }
 
   const notification =
-    `ðŸ“¤ *Reply Sent to Patient*\n\n` +
-    `ðŸ“… ${getDubaiTime()}\n\n` +
-    `ðŸ‘¤ Patient\n` +
+    `\u{1F4E4} *Reply Sent to Patient*\n\n` +
+    `\u{1F4C5} ${getDubaiTime()}\n\n` +
+    `\u{1F464} Patient\n` +
     `+${patientNumber}\n\n` +
-    `âœ… Action\n` +
+    `\u2705 Action\n` +
     `${actionDescription}\n\n` +
-    `ðŸ’¬ Reply sent\n` +
+    `\u{1F4AC} Reply sent\n` +
     `${replyMessage}`;
 
   await sendMessage(DR_MINA_PERSONAL, notification);
