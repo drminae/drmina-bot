@@ -373,7 +373,8 @@ async function saveMessageToSupabase({
   complaint = null,
   replied = false,
   replyMessage = null,
-  whatsappMessageId = null
+  whatsappMessageId = null,
+  isRead = direction === 'outgoing'
 }) {
   if (!supabase) {
     console.error(
@@ -398,6 +399,7 @@ async function saveMessageToSupabase({
         replied,
         reply_message: replyMessage,
         whatsapp_message_id: whatsappMessageId,
+        is_read: isRead,
         created_timestamp: new Date().toISOString()
       });
 
@@ -659,7 +661,7 @@ async function getInboxMessages(response, url) {
   let query = supabase
     .from('messages')
     .select(
-      'phone,patient_name,direction,message,rating,status,google_review_sent,complaint,replied,reply_message,whatsapp_message_id,created_timestamp'
+      'phone,patient_name,direction,message,rating,status,google_review_sent,complaint,replied,reply_message,whatsapp_message_id,is_read,created_timestamp'
     )
     .order('created_timestamp', { ascending: true })
     .limit(limit);
@@ -737,6 +739,82 @@ async function handleInboxReply(request, response) {
       success: false,
       error: error.message
     });
+  }
+}
+
+/* =========================================================
+   READ / UNREAD AND DELIVERY STATUS
+========================================================= */
+
+async function markConversationRead(request, response) {
+  try {
+    const rawBody = await readRequestBody(request);
+    const data = JSON.parse(rawBody || '{}');
+    const phone = normalizePhone(data.phone);
+    const isRead = data.isRead !== false;
+
+    if (!phone) {
+      sendJson(response, 400, { success: false, error: 'Invalid phone number.' });
+      return;
+    }
+
+    let query = supabase
+      .from('messages')
+      .update({ is_read: isRead })
+      .eq('phone', `+${phone}`)
+      .eq('direction', 'incoming');
+
+    if (!isRead) {
+      const { data: latest, error: latestError } = await supabase
+        .from('messages')
+        .select('whatsapp_message_id,created_timestamp')
+        .eq('phone', `+${phone}`)
+        .eq('direction', 'incoming')
+        .order('created_timestamp', { ascending: false })
+        .limit(1);
+
+      if (latestError) throw latestError;
+      const latestMessage = latest?.[0];
+      if (!latestMessage) {
+        sendJson(response, 200, { success: true });
+        return;
+      }
+
+      query = supabase
+        .from('messages')
+        .update({ is_read: false })
+        .eq('phone', `+${phone}`)
+        .eq('direction', 'incoming')
+        .eq('created_timestamp', latestMessage.created_timestamp);
+    }
+
+    const { error } = await query;
+    if (error) throw error;
+    sendJson(response, 200, { success: true });
+  } catch (error) {
+    console.error('Read/unread update error:', error.message);
+    sendJson(response, 500, { success: false, error: error.message });
+  }
+}
+
+async function updateWhatsAppStatuses(statuses) {
+  if (!supabase || !Array.isArray(statuses)) return;
+
+  for (const item of statuses) {
+    const id = item?.id;
+    const status = item?.status;
+    if (!id || !status) continue;
+
+    const { error } = await supabase
+      .from('messages')
+      .update({ status })
+      .eq('whatsapp_message_id', id);
+
+    if (error) {
+      console.error('WhatsApp status update error:', error.message);
+    } else {
+      console.log(`WhatsApp message ${id} updated to ${status}`);
+    }
   }
 }
 
@@ -875,6 +953,20 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  /* Mark conversation read or unread */
+
+  if (
+    request.method === 'POST' &&
+    url.pathname === '/api/inbox/read'
+  ) {
+    if (!requireAuthentication(request, response, true)) {
+      return;
+    }
+
+    await markConversationRead(request, response);
+    return;
+  }
+
   /* Inbox reply API */
 
   if (
@@ -947,10 +1039,17 @@ const server = http.createServer(async (request, response) => {
       const body = await readRequestBody(request);
       const data = JSON.parse(body);
 
-      const message =
+      const webhookValue =
         data.entry?.[0]
           ?.changes?.[0]
-          ?.value?.messages?.[0];
+          ?.value;
+
+      const statuses = webhookValue?.statuses || [];
+      if (statuses.length) {
+        await updateWhatsAppStatuses(statuses);
+      }
+
+      const message = webhookValue?.messages?.[0];
 
       if (message && message.type === 'text') {
         const from = message.from;
