@@ -1183,7 +1183,7 @@ const server = http.createServer(async (request, response) => {
 
         awaitingComplaint = loadComplaints();
 
-        /* Written feedback after rating 1â€“3 */
+        /* Written feedback after rating 1–3 */
 
         if (awaitingComplaint[from]) {
           const originalRating = awaitingComplaint[from];
