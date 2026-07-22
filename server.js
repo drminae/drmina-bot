@@ -386,10 +386,29 @@ async function saveMessageToSupabase({
   try {
     const cleanPhone = normalizePhone(phone);
 
+    // Carry the saved patient name forward to every new message so it remains
+    // available even when older messages eventually fall outside the inbox limit.
+    let patientName = null;
+    const { data: existingNames, error: nameLookupError } = await supabase
+      .from('messages')
+      .select('patient_name')
+      .eq('phone', `+${cleanPhone}`)
+      .not('patient_name', 'is', null)
+      .neq('patient_name', '')
+      .order('created_timestamp', { ascending: false })
+      .limit(1);
+
+    if (nameLookupError) {
+      console.error('Patient name lookup error:', nameLookupError.message);
+    } else {
+      patientName = existingNames?.[0]?.patient_name || null;
+    }
+
     const { error } = await supabase
       .from('messages')
       .insert({
         phone: `+${cleanPhone}`,
+        patient_name: patientName,
         direction,
         message,
         rating,
@@ -743,6 +762,79 @@ async function handleInboxReply(request, response) {
 }
 
 /* =========================================================
+   PATIENT NAME
+========================================================= */
+
+async function updatePatientName(request, response) {
+  try {
+    if (!supabase) {
+      sendJson(response, 503, {
+        success: false,
+        error: 'Supabase is not connected.'
+      });
+      return;
+    }
+
+    const rawBody = await readRequestBody(request);
+    const data = JSON.parse(rawBody || '{}');
+    const phone = normalizePhone(data.phone);
+    const patientName = String(data.patientName || '').trim();
+
+    if (!phone) {
+      sendJson(response, 400, {
+        success: false,
+        error: 'Invalid phone number.'
+      });
+      return;
+    }
+
+    if (!patientName) {
+      sendJson(response, 400, {
+        success: false,
+        error: 'Please enter the patient name.'
+      });
+      return;
+    }
+
+    if (patientName.length > 100) {
+      sendJson(response, 400, {
+        success: false,
+        error: 'The patient name must be 100 characters or fewer.'
+      });
+      return;
+    }
+
+    const { data: updatedRows, error } = await supabase
+      .from('messages')
+      .update({ patient_name: patientName })
+      .eq('phone', `+${phone}`)
+      .select('phone');
+
+    if (error) throw error;
+
+    if (!updatedRows?.length) {
+      sendJson(response, 404, {
+        success: false,
+        error: 'No conversation was found for this phone number.'
+      });
+      return;
+    }
+
+    sendJson(response, 200, {
+      success: true,
+      patientName,
+      updatedMessages: updatedRows.length
+    });
+  } catch (error) {
+    console.error('Patient name update error:', error.message);
+    sendJson(response, 500, {
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/* =========================================================
    READ / UNREAD AND DELIVERY STATUS
 ========================================================= */
 
@@ -950,6 +1042,20 @@ const server = http.createServer(async (request, response) => {
     }
 
     await getInboxMessages(response, url);
+    return;
+  }
+
+  /* Save or edit patient name */
+
+  if (
+    request.method === 'POST' &&
+    url.pathname === '/api/inbox/patient-name'
+  ) {
+    if (!requireAuthentication(request, response, true)) {
+      return;
+    }
+
+    await updatePatientName(request, response);
     return;
   }
 
