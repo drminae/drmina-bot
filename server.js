@@ -113,14 +113,14 @@ function sendJson(response, statusCode, data) {
   response.end(JSON.stringify(data));
 }
 
-function readRequestBody(request) {
+function readRequestBody(request, maxBytes = 1_000_000) {
   return new Promise((resolve, reject) => {
     let body = '';
 
     request.on('data', chunk => {
       body += chunk;
 
-      if (body.length > 1_000_000) {
+      if (body.length > maxBytes) {
         reject(new Error('Request body is too large.'));
         request.destroy();
       }
@@ -526,6 +526,235 @@ async function sendMessage(to, message) {
     outgoingRequest.write(body);
     outgoingRequest.end();
   });
+}
+
+
+/* =========================================================
+   UPLOAD AND SEND WHATSAPP MEDIA
+========================================================= */
+
+function getWhatsAppMediaType(mimeType) {
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  return 'document';
+}
+
+function getMediaSizeLimitBytes(mediaType) {
+  if (mediaType === 'image') return 5 * 1024 * 1024;
+  if (mediaType === 'video' || mediaType === 'audio') return 16 * 1024 * 1024;
+  return 25 * 1024 * 1024;
+}
+
+function sanitizeFilename(filename) {
+  return String(filename || 'attachment')
+    .replace(/[\\/\r\n\0\"]/g, '_')
+    .slice(0, 180) || 'attachment';
+}
+
+async function uploadMediaToWhatsApp(fileBuffer, mimeType, filename) {
+  if (!WA_TOKEN || !PHONE_NUMBER_ID) {
+    throw new Error('WhatsApp credentials are missing from Render.');
+  }
+
+  const boundary = `----DrMinaBoundary${crypto.randomBytes(12).toString('hex')}`;
+  const safeFilename = sanitizeFilename(filename);
+  const lineBreak = '\r\n';
+
+  const firstPart = Buffer.from(
+    `--${boundary}${lineBreak}` +
+    `Content-Disposition: form-data; name="messaging_product"${lineBreak}${lineBreak}` +
+    `whatsapp${lineBreak}` +
+    `--${boundary}${lineBreak}` +
+    `Content-Disposition: form-data; name="file"; filename="${safeFilename}"${lineBreak}` +
+    `Content-Type: ${mimeType || 'application/octet-stream'}${lineBreak}${lineBreak}`,
+    'utf8'
+  );
+  const lastPart = Buffer.from(`${lineBreak}--${boundary}--${lineBreak}`, 'utf8');
+  const requestBody = Buffer.concat([firstPart, fileBuffer, lastPart]);
+
+  const options = {
+    hostname: 'graph.facebook.com',
+    path: `/${WA_API_VERSION}/${PHONE_NUMBER_ID}/media`,
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${WA_TOKEN}`,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      'Content-Length': requestBody.length
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    const mediaRequest = https.request(options, apiResponse => {
+      let responseData = '';
+      apiResponse.on('data', chunk => { responseData += chunk; });
+      apiResponse.on('end', () => {
+        if (apiResponse.statusCode >= 200 && apiResponse.statusCode < 300) {
+          try {
+            const parsed = JSON.parse(responseData);
+            if (!parsed.id) throw new Error('Meta did not return a media ID.');
+            resolve(parsed.id);
+          } catch (error) {
+            reject(new Error(`Could not read media upload response: ${responseData}`));
+          }
+        } else {
+          reject(new Error(`WhatsApp rejected the upload: ${responseData}`));
+        }
+      });
+    });
+
+    mediaRequest.on('error', reject);
+    mediaRequest.write(requestBody);
+    mediaRequest.end();
+  });
+}
+
+async function sendMediaMessage(to, mediaId, mediaType, filename, caption = '') {
+  const cleanPhone = normalizePhone(to);
+  if (!cleanPhone) throw new Error('The WhatsApp phone number is invalid.');
+
+  const safeCaption = String(caption || '').trim().slice(0, 1024);
+  const mediaObject = { id: mediaId };
+
+  if (mediaType === 'document') {
+    mediaObject.filename = sanitizeFilename(filename);
+    if (safeCaption) mediaObject.caption = safeCaption;
+  } else if ((mediaType === 'image' || mediaType === 'video') && safeCaption) {
+    mediaObject.caption = safeCaption;
+  }
+
+  const bodyObject = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: cleanPhone,
+    type: mediaType,
+    [mediaType]: mediaObject
+  };
+
+  const body = JSON.stringify(bodyObject);
+  const options = {
+    hostname: 'graph.facebook.com',
+    path: `/${WA_API_VERSION}/${PHONE_NUMBER_ID}/messages`,
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${WA_TOKEN}`,
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body)
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    const mediaSendRequest = https.request(options, apiResponse => {
+      let responseData = '';
+      apiResponse.on('data', chunk => { responseData += chunk; });
+      apiResponse.on('end', () => {
+        if (apiResponse.statusCode >= 200 && apiResponse.statusCode < 300) {
+          try {
+            const parsed = JSON.parse(responseData);
+            resolve({
+              responseData,
+              whatsappMessageId: parsed.messages?.[0]?.id || null
+            });
+          } catch (error) {
+            resolve({ responseData, whatsappMessageId: null });
+          }
+        } else {
+          reject(new Error(`WhatsApp rejected the media message: ${responseData}`));
+        }
+      });
+    });
+
+    mediaSendRequest.on('error', reject);
+    mediaSendRequest.write(body);
+    mediaSendRequest.end();
+  });
+}
+
+async function handleInboxMedia(request, response) {
+  try {
+    const rawBody = await readRequestBody(request, 36 * 1024 * 1024);
+    const data = JSON.parse(rawBody || '{}');
+    const phone = normalizePhone(data.phone);
+    const filename = sanitizeFilename(data.fileName);
+    const mimeType = String(data.mimeType || 'application/octet-stream').toLowerCase();
+    const caption = String(data.caption || '').trim();
+    const encoded = String(data.dataBase64 || '').replace(/^data:[^;]+;base64,/, '');
+
+    if (!phone) throw new Error('Please select a patient first.');
+    if (!encoded) throw new Error('No attachment was selected.');
+
+    let fileBuffer;
+    try {
+      fileBuffer = Buffer.from(encoded, 'base64');
+    } catch (error) {
+      throw new Error('The selected file could not be read.');
+    }
+
+    if (!fileBuffer.length) throw new Error('The selected file is empty.');
+
+    const mediaType = getWhatsAppMediaType(mimeType);
+    const limit = getMediaSizeLimitBytes(mediaType);
+    if (fileBuffer.length > limit) {
+      throw new Error(
+        `${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)} is too large. ` +
+        `Maximum allowed here is ${Math.floor(limit / 1024 / 1024)} MB.`
+      );
+    }
+
+    const mediaId = await uploadMediaToWhatsApp(
+      fileBuffer,
+      mimeType,
+      filename
+    );
+
+    const result = await sendMediaMessage(
+      phone,
+      mediaId,
+      mediaType,
+      filename,
+      caption
+    );
+
+    const displayMessage =
+      `${mediaType === 'image' ? '\u{1F5BC}\u{FE0F}' :
+         mediaType === 'video' ? '\u{1F3A5}' :
+         mediaType === 'audio' ? '\u{1F3A4}' : '\u{1F4CE}'} ${filename}` +
+      (caption ? `\n${caption}` : '');
+
+    await saveMessageToSupabase({
+      phone,
+      direction: 'outgoing',
+      message: displayMessage,
+      status: 'sent',
+      replied: true,
+      replyMessage: displayMessage,
+      whatsappMessageId: result.whatsappMessageId,
+      isRead: true
+    });
+
+    if (phone !== DR_MINA_PERSONAL) {
+      await sendMessage(
+        DR_MINA_PERSONAL,
+        `\u{1F4E4} *Attachment Sent*\n\n` +
+        `\u{1F464} Patient\n+${phone}\n\n` +
+        `\u{1F4CE} File\n${filename}`
+      );
+    }
+
+    sendJson(response, 200, {
+      success: true,
+      mediaType,
+      filename,
+      whatsappMessageId: result.whatsappMessageId || null
+    });
+  } catch (error) {
+    console.error('Inbox media error:', error.message);
+    sendJson(response, 500, {
+      success: false,
+      error: error.message
+    });
+  }
 }
 
 /* =========================================================
@@ -1073,6 +1302,20 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  /* Upload and send attachment */
+
+  if (
+    request.method === 'POST' &&
+    url.pathname === '/api/inbox/media'
+  ) {
+    if (!requireAuthentication(request, response, true)) {
+      return;
+    }
+
+    await handleInboxMedia(request, response);
+    return;
+  }
+
   /* Inbox reply API */
 
   if (
@@ -1183,7 +1426,7 @@ const server = http.createServer(async (request, response) => {
 
         awaitingComplaint = loadComplaints();
 
-        /* Written feedback after rating 1–3 */
+        /* Written feedback after rating 1â€“3 */
 
         if (awaitingComplaint[from]) {
           const originalRating = awaitingComplaint[from];
