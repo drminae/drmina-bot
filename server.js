@@ -530,6 +530,107 @@ async function sendMessage(to, message) {
 
 
 /* =========================================================
+   MEDIA MESSAGE METADATA + SECURE MEDIA PROXY
+========================================================= */
+
+const MEDIA_MESSAGE_PREFIX = '__DRMINA_MEDIA__:';
+
+function encodeMediaMessage({ mediaId, mediaType, filename, mimeType, caption = '' }) {
+  const payload = {
+    mediaId: String(mediaId || ''),
+    mediaType: String(mediaType || 'document'),
+    filename: sanitizeFilename(filename || 'attachment'),
+    mimeType: String(mimeType || 'application/octet-stream'),
+    caption: String(caption || '').trim().slice(0, 1024)
+  };
+
+  return MEDIA_MESSAGE_PREFIX + Buffer.from(
+    JSON.stringify(payload),
+    'utf8'
+  ).toString('base64url');
+}
+
+function requestMetaJson(pathname) {
+  return new Promise((resolve, reject) => {
+    const metaRequest = https.request({
+      hostname: 'graph.facebook.com',
+      path: pathname,
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${WA_TOKEN}`,
+        Accept: 'application/json'
+      }
+    }, metaResponse => {
+      let responseData = '';
+      metaResponse.on('data', chunk => { responseData += chunk; });
+      metaResponse.on('end', () => {
+        if (metaResponse.statusCode >= 200 && metaResponse.statusCode < 300) {
+          try { resolve(JSON.parse(responseData)); }
+          catch (error) { reject(new Error('Meta returned an unreadable media response.')); }
+        } else {
+          reject(new Error(`Meta media request failed: ${responseData}`));
+        }
+      });
+    });
+    metaRequest.on('error', reject);
+    metaRequest.end();
+  });
+}
+
+async function proxyWhatsAppMedia(response, mediaId, download = false) {
+  if (!WA_TOKEN) {
+    sendJson(response, 503, { success: false, error: 'WA_TOKEN is missing from Render.' });
+    return;
+  }
+
+  const cleanMediaId = String(mediaId || '').trim();
+  if (!/^[A-Za-z0-9._-]+$/.test(cleanMediaId)) {
+    sendJson(response, 400, { success: false, error: 'Invalid media ID.' });
+    return;
+  }
+
+  try {
+    const mediaInfo = await requestMetaJson(`/${WA_API_VERSION}/${encodeURIComponent(cleanMediaId)}`);
+    if (!mediaInfo.url) throw new Error('Meta did not return a media download URL.');
+
+    const mediaUrl = new URL(mediaInfo.url);
+    const mediaRequest = https.request({
+      hostname: mediaUrl.hostname,
+      path: mediaUrl.pathname + mediaUrl.search,
+      method: 'GET',
+      headers: { Authorization: `Bearer ${WA_TOKEN}` }
+    }, mediaResponse => {
+      if (mediaResponse.statusCode < 200 || mediaResponse.statusCode >= 300) {
+        let errorBody = '';
+        mediaResponse.on('data', chunk => { errorBody += chunk; });
+        mediaResponse.on('end', () => {
+          if (!response.headersSent) sendJson(response, 502, { success: false, error: `Could not download media from Meta: ${errorBody}` });
+        });
+        return;
+      }
+
+      const headers = {
+        'Content-Type': mediaResponse.headers['content-type'] || mediaInfo.mime_type || 'application/octet-stream',
+        'Cache-Control': 'private, max-age=300',
+        'X-Content-Type-Options': 'nosniff'
+      };
+      if (mediaResponse.headers['content-length']) headers['Content-Length'] = mediaResponse.headers['content-length'];
+      if (download) headers['Content-Disposition'] = 'attachment';
+      response.writeHead(200, headers);
+      mediaResponse.pipe(response);
+    });
+
+    mediaRequest.on('error', error => {
+      if (!response.headersSent) sendJson(response, 502, { success: false, error: error.message });
+      else response.destroy(error);
+    });
+    mediaRequest.end();
+  } catch (error) {
+    sendJson(response, 500, { success: false, error: error.message });
+  }
+}
+
+/* =========================================================
    UPLOAD AND SEND WHATSAPP MEDIA
 ========================================================= */
 
@@ -716,11 +817,13 @@ async function handleInboxMedia(request, response) {
       caption
     );
 
-    const displayMessage =
-      `${mediaType === 'image' ? '\u{1F5BC}\u{FE0F}' :
-         mediaType === 'video' ? '\u{1F3A5}' :
-         mediaType === 'audio' ? '\u{1F3A4}' : '\u{1F4CE}'} ${filename}` +
-      (caption ? `\n${caption}` : '');
+    const displayMessage = encodeMediaMessage({
+      mediaId,
+      mediaType,
+      filename,
+      mimeType,
+      caption
+    });
 
     await saveMessageToSupabase({
       phone,
@@ -1299,6 +1402,21 @@ const server = http.createServer(async (request, response) => {
     }
 
     await markConversationRead(request, response);
+    return;
+  }
+
+  /* Secure media preview/download */
+
+  if (
+    request.method === 'GET' &&
+    url.pathname === '/api/inbox/media-file'
+  ) {
+    if (!requireAuthentication(request, response, true)) return;
+    await proxyWhatsAppMedia(
+      response,
+      url.searchParams.get('mediaId'),
+      url.searchParams.get('download') === '1'
+    );
     return;
   }
 
