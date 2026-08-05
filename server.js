@@ -550,6 +550,68 @@ function encodeMediaMessage({ mediaId, mediaType, filename, mimeType, caption = 
   ).toString('base64url');
 }
 
+
+function getIncomingMediaPayload(message) {
+  if (!message || !message.type) return null;
+
+  const supportedTypes = new Set([
+    'image',
+    'document',
+    'audio',
+    'video',
+    'sticker'
+  ]);
+
+  if (!supportedTypes.has(message.type)) return null;
+
+  const source = message[message.type] || {};
+  const mediaId = String(source.id || '').trim();
+  if (!mediaId) return null;
+
+  const mediaType =
+    message.type === 'sticker'
+      ? 'image'
+      : message.type;
+
+  const defaultNames = {
+    image: 'WhatsApp image',
+    document: 'WhatsApp document',
+    audio: 'WhatsApp voice note',
+    video: 'WhatsApp video',
+    sticker: 'WhatsApp sticker'
+  };
+
+  const extensionByMime = {
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'application/pdf': '.pdf',
+    'audio/ogg': '.ogg',
+    'audio/mpeg': '.mp3',
+    'audio/mp4': '.m4a',
+    'video/mp4': '.mp4'
+  };
+
+  const mimeType = String(
+    source.mime_type ||
+    (message.type === 'sticker' ? 'image/webp' : 'application/octet-stream')
+  );
+
+  const extension = extensionByMime[mimeType] || '';
+  const filename = sanitizeFilename(
+    source.filename ||
+    `${defaultNames[message.type] || 'WhatsApp attachment'}${extension}`
+  );
+
+  return {
+    mediaId,
+    mediaType,
+    filename,
+    mimeType,
+    caption: String(source.caption || '').trim()
+  };
+}
+
 function requestMetaJson(pathname) {
   return new Promise((resolve, reject) => {
     const metaRequest = https.request({
@@ -1518,7 +1580,37 @@ const server = http.createServer(async (request, response) => {
 
       const message = webhookValue?.messages?.[0];
 
-      if (message && message.type === 'text') {
+      const incomingMedia = getIncomingMediaPayload(message);
+
+      if (message && incomingMedia) {
+        const from = message.from;
+        const encodedMedia = encodeMediaMessage(incomingMedia);
+
+        console.log(
+          `Incoming ${message.type} from ${from}: ${incomingMedia.filename}`
+        );
+
+        await saveMessageToSupabase({
+          phone: from,
+          direction: 'incoming',
+          message: encodedMedia,
+          status: 'received',
+          replied: false,
+          whatsappMessageId: message.id || null,
+          isRead: false
+        });
+
+        const captionText = incomingMedia.caption
+          ? `\nCaption: ${incomingMedia.caption}`
+          : '';
+
+        await forwardIncomingMessage(
+          from,
+          `[Incoming ${message.type}] ${incomingMedia.filename}${captionText}`
+        );
+      }
+
+      else if (message && message.type === 'text') {
         const from = message.from;
         const text = message.text.body.trim();
         const rating = Number(text);
