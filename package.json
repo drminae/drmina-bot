@@ -1,13 +1,14 @@
 {
   "name": "dr-mina-review-bot",
-  "version": "1.1.0",
-  "description": "WhatsApp review bot for Dr. Mina Charopeme",
+  "version": "1.6.2",
+  "description": "Patient Connect WhatsApp clinic communication platform",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.8"
+    "@supabase/supabase-js": "^2.49.8",
+    "ffmpeg-static": "^5.2.0"
   },
   "engines": {
     "node": ">=18"
