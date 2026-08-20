@@ -3,6 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const crypto = require('crypto');
+const os = require('os');
+const { spawn } = require('child_process');
+const ffmpegPath = require('ffmpeg-static');
 const { createClient } = require('@supabase/supabase-js');
 
 /* =========================================================
@@ -639,7 +642,7 @@ function requestMetaJson(pathname) {
   });
 }
 
-async function proxyWhatsAppMedia(response, mediaId, download = false) {
+async function proxyWhatsAppMedia(request, response, mediaId, download = false) {
   if (!WA_TOKEN) {
     sendJson(response, 503, { success: false, error: 'WA_TOKEN is missing from Render.' });
     return;
@@ -656,45 +659,207 @@ async function proxyWhatsAppMedia(response, mediaId, download = false) {
     if (!mediaInfo.url) throw new Error('Meta did not return a media download URL.');
 
     const mediaUrl = new URL(mediaInfo.url);
+    const upstreamHeaders = {
+      Authorization: `Bearer ${WA_TOKEN}`
+    };
+
+    // Audio/video elements commonly request byte ranges for metadata and seeking.
+    if (request.headers.range) {
+      upstreamHeaders.Range = request.headers.range;
+    }
+
     const mediaRequest = https.request({
       hostname: mediaUrl.hostname,
       path: mediaUrl.pathname + mediaUrl.search,
       method: 'GET',
-      headers: { Authorization: `Bearer ${WA_TOKEN}` }
+      headers: upstreamHeaders
     }, mediaResponse => {
-      if (mediaResponse.statusCode < 200 || mediaResponse.statusCode >= 300) {
+      if (
+        mediaResponse.statusCode !== 200 &&
+        mediaResponse.statusCode !== 206
+      ) {
         let errorBody = '';
         mediaResponse.on('data', chunk => { errorBody += chunk; });
         mediaResponse.on('end', () => {
-          if (!response.headersSent) sendJson(response, 502, { success: false, error: `Could not download media from Meta: ${errorBody}` });
+          if (!response.headersSent) {
+            sendJson(response, 502, {
+              success: false,
+              error: `Could not download media from Meta: ${errorBody}`
+            });
+          }
         });
         return;
       }
 
+      const upstreamType = String(
+        mediaResponse.headers['content-type'] || ''
+      ).toLowerCase();
+
+      // Meta may serve binary media as application/octet-stream.
+      // The media metadata has the original MIME type and is better for
+      // browser audio/video playback in that case.
+      const contentType =
+        !upstreamType ||
+        upstreamType === 'application/octet-stream'
+          ? (mediaInfo.mime_type || 'application/octet-stream')
+          : upstreamType;
+
       const headers = {
-        'Content-Type': mediaResponse.headers['content-type'] || mediaInfo.mime_type || 'application/octet-stream',
+        'Content-Type': contentType,
         'Cache-Control': 'private, max-age=300',
-        'X-Content-Type-Options': 'nosniff'
+        'X-Content-Type-Options': 'nosniff',
+        'Accept-Ranges':
+          mediaResponse.headers['accept-ranges'] || 'bytes'
       };
-      if (mediaResponse.headers['content-length']) headers['Content-Length'] = mediaResponse.headers['content-length'];
-      if (download) headers['Content-Disposition'] = 'attachment';
-      response.writeHead(200, headers);
+
+      if (mediaResponse.headers['content-length']) {
+        headers['Content-Length'] =
+          mediaResponse.headers['content-length'];
+      }
+
+      if (mediaResponse.headers['content-range']) {
+        headers['Content-Range'] =
+          mediaResponse.headers['content-range'];
+      }
+
+      if (download) {
+        headers['Content-Disposition'] = 'attachment';
+      }
+
+      response.writeHead(mediaResponse.statusCode, headers);
       mediaResponse.pipe(response);
     });
 
     mediaRequest.on('error', error => {
-      if (!response.headersSent) sendJson(response, 502, { success: false, error: error.message });
-      else response.destroy(error);
+      if (!response.headersSent) {
+        sendJson(response, 502, {
+          success: false,
+          error: error.message
+        });
+      } else {
+        response.destroy(error);
+      }
     });
+
     mediaRequest.end();
   } catch (error) {
-    sendJson(response, 500, { success: false, error: error.message });
+    sendJson(response, 500, {
+      success: false,
+      error: error.message
+    });
   }
 }
 
 /* =========================================================
    UPLOAD AND SEND WHATSAPP MEDIA
 ========================================================= */
+
+
+function isMetaCompatibleAudioMime(mimeType) {
+  const mime = String(mimeType || '').toLowerCase().split(';')[0].trim();
+
+  return new Set([
+    'audio/aac',
+    'audio/mp4',
+    'audio/mpeg',
+    'audio/amr',
+    'audio/ogg'
+  ]).has(mime);
+}
+
+function runFfmpeg(args) {
+  return new Promise((resolve, reject) => {
+    if (!ffmpegPath) {
+      reject(new Error('Audio converter is not available.'));
+      return;
+    }
+
+    const process = spawn(ffmpegPath, args, {
+      stdio: ['ignore', 'ignore', 'pipe']
+    });
+
+    let errorText = '';
+
+    process.stderr.on('data', chunk => {
+      errorText += chunk.toString();
+    });
+
+    process.on('error', reject);
+
+    process.on('close', code => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(
+          new Error(
+            `Audio conversion failed${errorText ? `: ${errorText.slice(-600)}` : '.'}`
+          )
+        );
+      }
+    });
+  });
+}
+
+async function normalizeAudioForWhatsApp(fileBuffer, mimeType, filename) {
+  const cleanMime = String(mimeType || '')
+    .toLowerCase()
+    .split(';')[0]
+    .trim();
+
+  // OGG is only accepted by WhatsApp when encoded with Opus.
+  // Browser recordings can be WebM/Opus or other formats, so recordings
+  // are normalized to OGG/Opus for consistent delivery.
+  const shouldConvert =
+    cleanMime.startsWith('audio/') &&
+    (
+      !isMetaCompatibleAudioMime(cleanMime) ||
+      cleanMime === 'audio/ogg'
+    );
+
+  if (!shouldConvert) {
+    return {
+      fileBuffer,
+      mimeType: cleanMime || mimeType,
+      filename
+    };
+  }
+
+  const tempId = crypto.randomBytes(12).toString('hex');
+  const inputPath = path.join(os.tmpdir(), `patient-connect-${tempId}.input`);
+  const outputPath = path.join(os.tmpdir(), `patient-connect-${tempId}.ogg`);
+
+  try {
+    fs.writeFileSync(inputPath, fileBuffer);
+
+    await runFfmpeg([
+      '-y',
+      '-i', inputPath,
+      '-vn',
+      '-c:a', 'libopus',
+      '-b:a', '48k',
+      '-application', 'voip',
+      outputPath
+    ]);
+
+    const converted = fs.readFileSync(outputPath);
+
+    if (!converted.length) {
+      throw new Error('Converted voice note was empty.');
+    }
+
+    const baseName = sanitizeFilename(filename || 'voice-note')
+      .replace(/\.[^.]+$/, '');
+
+    return {
+      fileBuffer: converted,
+      mimeType: 'audio/ogg',
+      filename: `${baseName}.ogg`
+    };
+  } finally {
+    try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch (_) {}
+    try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (_) {}
+  }
+}
 
 function getWhatsAppMediaType(mimeType) {
   const mime = String(mimeType || '').toLowerCase();
@@ -856,9 +1021,26 @@ async function handleInboxMedia(request, response) {
 
     if (!fileBuffer.length) throw new Error('The selected file is empty.');
 
-    const mediaType = getWhatsAppMediaType(mimeType);
+    let finalBuffer = fileBuffer;
+    let finalMimeType = mimeType;
+    let finalFilename = filename;
+    let mediaType = getWhatsAppMediaType(finalMimeType);
+
+    if (mediaType === 'audio') {
+      const normalizedAudio = await normalizeAudioForWhatsApp(
+        finalBuffer,
+        finalMimeType,
+        finalFilename
+      );
+
+      finalBuffer = normalizedAudio.fileBuffer;
+      finalMimeType = normalizedAudio.mimeType;
+      finalFilename = normalizedAudio.filename;
+      mediaType = 'audio';
+    }
+
     const limit = getMediaSizeLimitBytes(mediaType);
-    if (fileBuffer.length > limit) {
+    if (finalBuffer.length > limit) {
       throw new Error(
         `${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)} is too large. ` +
         `Maximum allowed here is ${Math.floor(limit / 1024 / 1024)} MB.`
@@ -866,24 +1048,24 @@ async function handleInboxMedia(request, response) {
     }
 
     const mediaId = await uploadMediaToWhatsApp(
-      fileBuffer,
-      mimeType,
-      filename
+      finalBuffer,
+      finalMimeType,
+      finalFilename
     );
 
     const result = await sendMediaMessage(
       phone,
       mediaId,
       mediaType,
-      filename,
+      finalFilename,
       caption
     );
 
     const displayMessage = encodeMediaMessage({
       mediaId,
       mediaType,
-      filename,
-      mimeType,
+      filename: finalFilename,
+      mimeType: finalMimeType,
       caption
     });
 
@@ -903,14 +1085,14 @@ async function handleInboxMedia(request, response) {
         DR_MINA_PERSONAL,
         `\u{1F4E4} *Attachment Sent*\n\n` +
         `\u{1F464} Patient\n+${phone}\n\n` +
-        `\u{1F4CE} File\n${filename}`
+        `\u{1F4CE} File\n${finalFilename}`
       );
     }
 
     sendJson(response, 200, {
       success: true,
       mediaType,
-      filename,
+      filename: finalFilename,
       whatsappMessageId: result.whatsappMessageId || null
     });
   } catch (error) {
@@ -1475,6 +1657,7 @@ const server = http.createServer(async (request, response) => {
   ) {
     if (!requireAuthentication(request, response, true)) return;
     await proxyWhatsAppMedia(
+      request,
       response,
       url.searchParams.get('mediaId'),
       url.searchParams.get('download') === '1'
