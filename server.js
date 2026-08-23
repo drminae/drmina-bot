@@ -442,7 +442,7 @@ async function saveMessageToSupabase({
    SEND WHATSAPP MESSAGE
 ========================================================= */
 
-async function sendMessage(to, message, contextMessageId = null) {
+async function sendMessage(to, message) {
   if (!WA_TOKEN) {
     throw new Error(
       'WA_TOKEN is missing from Render Environment Variables.'
@@ -461,7 +461,7 @@ async function sendMessage(to, message, contextMessageId = null) {
     throw new Error('The WhatsApp phone number is invalid.');
   }
 
-  const bodyObject = {
+  const body = JSON.stringify({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
     to: cleanPhone,
@@ -470,9 +470,7 @@ async function sendMessage(to, message, contextMessageId = null) {
       preview_url: true,
       body: message
     }
-  };
-  if (contextMessageId) bodyObject.context = { message_id: String(contextMessageId) };
-  const body = JSON.stringify(bodyObject);
+  });
 
   const options = {
     hostname: 'graph.facebook.com',
@@ -555,35 +553,6 @@ function encodeMediaMessage({ mediaId, mediaType, filename, mimeType, caption = 
   ).toString('base64url');
 }
 
-
-
-const REPLY_MESSAGE_PREFIX = '__PC_REPLY__:';
-
-function encodeReplyMessage({ text, replyToId = '', replyPreview = '', replyDirection = '' }) {
-  const payload = {
-    text: String(text || ''),
-    replyToId: String(replyToId || ''),
-    replyPreview: String(replyPreview || '').slice(0, 300),
-    replyDirection: String(replyDirection || '')
-  };
-  return REPLY_MESSAGE_PREFIX + Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-}
-
-function decodeStoredMediaMessage(value) {
-  const raw = String(value || '');
-  if (!raw.startsWith(MEDIA_MESSAGE_PREFIX)) return null;
-  try {
-    return JSON.parse(Buffer.from(raw.slice(MEDIA_MESSAGE_PREFIX.length), 'base64url').toString('utf8'));
-  } catch { return null; }
-}
-
-function decodeStoredReplyMessage(value) {
-  const raw = String(value || '');
-  if (!raw.startsWith(REPLY_MESSAGE_PREFIX)) return null;
-  try {
-    return JSON.parse(Buffer.from(raw.slice(REPLY_MESSAGE_PREFIX.length), 'base64url').toString('utf8'));
-  } catch { return null; }
-}
 
 function getIncomingMediaPayload(message) {
   if (!message || !message.type) return null;
@@ -1330,9 +1299,6 @@ async function handleInboxReply(request, response) {
 
     const phone = normalizePhone(data.phone);
     const message = String(data.message || '').trim();
-    const contextMessageId = String(data.contextMessageId || '').trim();
-    const replyPreview = String(data.replyPreview || '').trim().slice(0, 300);
-    const replyDirection = String(data.replyDirection || '').trim();
 
     if (!phone) {
       sendJson(response, 400, {
@@ -1358,31 +1324,14 @@ async function handleInboxReply(request, response) {
       return;
     }
 
-    let result;
-    if (contextMessageId) {
-      result = await sendMessage(phone, message, contextMessageId);
-      await saveMessageToSupabase({
-        phone,
-        direction: 'outgoing',
-        message: encodeReplyMessage({
-          text: message,
-          replyToId: contextMessageId,
-          replyPreview,
-          replyDirection
-        }),
-        status: 'manual_inbox_reply',
-        replied: true,
-        replyMessage: message,
-        whatsappMessageId: result.whatsappMessageId
-      });
-    } else {
-      result = await sendPatientReplyWithCopy(
-        phone,
-        message,
-        'Manual reply sent from Dr Mina Inbox.',
-        { status: 'manual_inbox_reply' }
-      );
-    }
+    const result = await sendPatientReplyWithCopy(
+      phone,
+      message,
+      'Manual reply sent from Dr Mina Inbox.',
+      {
+        status: 'manual_inbox_reply'
+      }
+    );
 
     sendJson(response, 200, {
       success: true,
@@ -1395,54 +1344,6 @@ async function handleInboxReply(request, response) {
       success: false,
       error: error.message
     });
-  }
-}
-
-
-async function handleInboxForward(request, response) {
-  try {
-    const rawBody = await readRequestBody(request);
-    const data = JSON.parse(rawBody || '{}');
-    const phone = normalizePhone(data.phone);
-    const storedMessage = String(data.storedMessage || '');
-
-    if (!phone) {
-      sendJson(response, 400, { success: false, error: 'Select a destination conversation.' });
-      return;
-    }
-    if (!storedMessage) {
-      sendJson(response, 400, { success: false, error: 'There is no message to forward.' });
-      return;
-    }
-
-    const media = decodeStoredMediaMessage(storedMessage);
-    const reply = decodeStoredReplyMessage(storedMessage);
-    let result, savedMessage;
-
-    if (media) {
-      result = await sendMediaMessage(phone, media.mediaId, media.mediaType, media.filename, media.caption || '');
-      savedMessage = storedMessage;
-    } else {
-      const text = String(reply?.text || storedMessage).trim();
-      if (!text) throw new Error('This message cannot be forwarded.');
-      result = await sendMessage(phone, text);
-      savedMessage = text;
-    }
-
-    await saveMessageToSupabase({
-      phone,
-      direction: 'outgoing',
-      message: savedMessage,
-      status: 'sent',
-      replied: true,
-      replyMessage: 'Forwarded message',
-      whatsappMessageId: result?.whatsappMessageId || null
-    });
-
-    sendJson(response, 200, { success: true, whatsappMessageId: result?.whatsappMessageId || null });
-  } catch (error) {
-    console.error('Inbox forward error:', error.message);
-    sendJson(response, 500, { success: false, error: error.message });
   }
 }
 
@@ -1785,16 +1686,6 @@ const server = http.createServer(async (request, response) => {
     }
 
     await handleInboxMedia(request, response);
-    return;
-  }
-
-  /* Inbox forward API */
-  if (
-    request.method === 'POST' &&
-    url.pathname === '/api/inbox/forward'
-  ) {
-    if (!requireAuthentication(request, response, true)) return;
-    await handleInboxForward(request, response);
     return;
   }
 
