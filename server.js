@@ -809,9 +809,13 @@ async function normalizeAudioForWhatsApp(fileBuffer, mimeType, filename) {
   // OGG is only accepted by WhatsApp when encoded with Opus.
   // Browser recordings can be WebM/Opus or other formats, so recordings
   // are normalized to OGG/Opus for consistent delivery.
+  const isRecordedVoiceNote =
+    /^voice-note-/i.test(String(filename || ''));
+
   const shouldConvert =
     cleanMime.startsWith('audio/') &&
     (
+      isRecordedVoiceNote ||
       !isMetaCompatibleAudioMime(cleanMime) ||
       cleanMime === 'audio/ogg'
     );
@@ -835,9 +839,12 @@ async function normalizeAudioForWhatsApp(fileBuffer, mimeType, filename) {
       '-y',
       '-i', inputPath,
       '-vn',
+      '-ac', '1',
+      '-ar', '48000',
       '-c:a', 'libopus',
       '-b:a', '48k',
       '-application', 'voip',
+      '-avoid_negative_ts', 'make_zero',
       outputPath
     ]);
 
@@ -1007,7 +1014,10 @@ async function handleInboxMedia(request, response) {
     const filename = sanitizeFilename(data.fileName);
     const mimeType = String(data.mimeType || 'application/octet-stream').toLowerCase();
     const caption = String(data.caption || '').trim();
-    const encoded = String(data.dataBase64 || '').replace(/^data:[^;]+;base64,/, '');
+    const rawData = String(data.dataBase64 || '').trim();
+    const encoded = rawData.startsWith('data:')
+      ? rawData.slice(rawData.indexOf(',') + 1)
+      : rawData;
 
     if (!phone) throw new Error('Please select a patient first.');
     if (!encoded) throw new Error('No attachment was selected.');
