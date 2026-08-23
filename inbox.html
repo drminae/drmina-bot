@@ -42,7 +42,7 @@
 .conversation-item.is-favorite .name:after{content:" ★";color:#d39b00;font-size:12px}
 
 .message-row{position:relative}
-.reply-trigger{position:absolute;top:4px;width:28px;height:28px;border:0;border-radius:50%;background:rgba(255,255,255,.95);box-shadow:0 1px 4px rgba(0,0,0,.10);cursor:pointer;display:none;place-items:center;color:#52615d;font-size:17px;z-index:4}
+.reply-trigger{position:absolute;top:4px;width:28px;height:28px;border:0;border-radius:50%;background:rgba(255,255,255,.95);box-shadow:0 1px 4px rgba(0,0,0,.10);cursor:pointer;display:none;place-items:center;color:#52615d;font-size:20px;font-weight:700;line-height:1;z-index:4}
 .message-row:hover .reply-trigger,.reply-trigger:focus{display:grid}
 .message-row.incoming .reply-trigger{right:8px}
 .message-row.outgoing .reply-trigger{left:8px}
@@ -218,7 +218,7 @@ function renderMessages(messages){
     if(dk!==lastDay){html+=`<div class="date-separator"><span>${dayLabel(m.created_timestamp)}</span></div>`;lastDay=dk}
     if(!unreadShown&&m.direction==='incoming'&&m.is_read===false){html+='<div class="unread-line">UNREAD MESSAGES</div>';unreadShown=true}
     const out=m.direction==='outgoing';
-    html+=`<div class="message-row ${out?'outgoing':'incoming'}" data-message-index="${index}"><button class="reply-trigger" type="button" aria-label="Reply" title="Reply">&#8617;</button><div class="bubble">${renderMessageBody(m)}<div class="message-meta"><span>${esc(time(m.created_timestamp))}</span>${out?ticks(m.status):''}</div></div></div>`
+    html+=`<div class="message-row ${out?'outgoing':'incoming'}" data-message-index="${index}"><button class="reply-trigger" type="button" aria-label="Message options" title="Reply">&#8942;</button><div class="bubble">${renderMessageBody(m)}<div class="message-meta"><span>${esc(time(m.created_timestamp))}</span>${out?ticks(m.status):''}</div></div></div>`
   });
   msgBox.innerHTML=html;
   msgBox.querySelectorAll('.reply-trigger').forEach(btn=>btn.onclick=e=>{
