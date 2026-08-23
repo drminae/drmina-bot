@@ -33,7 +33,14 @@
     .profile-btn{width:auto;padding:0 12px;gap:7px;font-size:13px;font-weight:750;display:none}.profile-btn.visible{display:flex;align-items:center;justify-content:center}.profile-drawer{position:fixed;top:0;right:0;width:min(380px,100vw);height:100dvh;background:#fff;z-index:80;box-shadow:-18px 0 45px rgba(16,47,42,.18);transform:translateX(105%);transition:transform .22s ease;display:flex;flex-direction:column}.profile-drawer.open{transform:translateX(0)}.profile-overlay{position:fixed;inset:0;background:rgba(11,35,31,.36);z-index:79;display:none}.profile-overlay.open{display:block}.profile-head{padding:18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;background:#f8fbfa}.profile-head h3{margin:0;font-size:18px}.profile-head p{margin:3px 0 0;color:var(--muted);font-size:12px}.profile-close{margin-left:auto}.profile-body{padding:18px;overflow:auto}.profile-card{border:1px solid var(--line);border-radius:16px;padding:15px;margin-bottom:14px;background:#fff}.profile-card h4{margin:0 0 11px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.profile-stat{background:#f7faf9;border-radius:12px;padding:11px}.profile-stat strong{display:block;font-size:17px}.profile-stat span{font-size:11px;color:var(--muted)}.profile-label{display:block;font-size:12px;font-weight:750;margin:0 0 7px}.profile-notes{width:100%;min-height:120px;resize:vertical;border:1px solid var(--line);border-radius:12px;padding:11px;outline:none}.profile-notes:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(11,122,109,.1)}.tag-list{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:11px}.tag-chip{border:1px solid #b9ded5;background:#edf9f6;color:#086d61;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:750;cursor:pointer}.tag-chip.active{background:var(--green);color:#fff;border-color:var(--green)}.profile-save{width:100%;height:44px;border:0;border-radius:12px;background:var(--green);color:white;font-weight:800;cursor:pointer}.profile-safe-note{font-size:11px;color:var(--muted);line-height:1.45;margin-top:9px}
     .media-image{display:block;max-width:min(390px,72vw);max-height:360px;border-radius:10px;object-fit:cover;cursor:zoom-in;background:#e8efec}.media-caption{margin-top:7px;white-space:pre-wrap}.media-card{display:flex;align-items:center;gap:10px;min-width:230px;max-width:390px}.media-card-icon{width:44px;height:44px;border-radius:10px;background:#e8f4f1;display:grid;place-items:center;font-size:23px;flex:0 0 auto}.media-card-info{min-width:0;flex:1}.media-card-name{font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.media-card-actions{display:flex;gap:8px;margin-top:5px}.media-link{color:var(--green-dark);font-size:12px;font-weight:700;text-decoration:none}.media-link:hover{text-decoration:underline}.media-loading{width:240px;height:150px;border-radius:10px;background:linear-gradient(90deg,#e8efec 25%,#f5f8f7 37%,#e8efec 63%);background-size:400% 100%;animation:mediaShimmer 1.2s infinite}@keyframes mediaShimmer{0%{background-position:100% 0}100%{background-position:0 0}}.media-viewer{position:fixed;inset:0;background:rgba(5,17,15,.88);display:none;align-items:center;justify-content:center;z-index:120;padding:28px}.media-viewer.open{display:flex}.media-viewer img{max-width:92vw;max-height:88vh;object-fit:contain;transform:rotate(var(--rotation,0deg)) scale(var(--zoom,1));transition:transform .15s}.media-viewer-toolbar{position:fixed;top:16px;right:16px;display:flex;gap:8px;z-index:121}.media-viewer-btn{border:0;background:rgba(255,255,255,.94);color:#17342f;border-radius:10px;padding:9px 12px;font-weight:750;cursor:pointer}.media-viewer-name{position:fixed;left:18px;top:20px;color:#fff;font-weight:700;max-width:45vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.media-error{padding:12px;border:1px solid #ffd7d2;background:#fff3f1;color:#b42318;border-radius:10px;font-size:13px}
     @media(max-width:780px){.profile-btn span{display:none}.profile-btn{width:38px;padding:0}.app{grid-template-columns:1fr}.chat{display:none}.app.chat-open .sidebar{display:none}.app.chat-open .chat{display:flex}.mobile-back{display:grid}.messages{padding:18px 11px}.bubble{max-width:88%}.connection{display:none}}
-  </style>
+  
+.conv-menu{position:fixed;z-index:999;width:220px;padding:6px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.18)}
+.conv-menu button{width:100%;border:0;background:transparent;text-align:left;padding:10px;border-radius:8px;cursor:pointer;font:inherit;color:var(--ink)}
+.conv-menu button:hover{background:#f0f7f5}
+.menu-btn{cursor:pointer}
+.conversation-item.is-pinned .name:before{content:"📌 ";font-size:12px}
+.conversation-item.is-favorite .name:after{content:" ★";color:#d39b00;font-size:12px}
+</style>
 </head>
 <body>
 <main class="app" id="app">
@@ -108,7 +115,43 @@ function browserNotify(c,m){if(Notification.permission==='granted'&&document.hid
 function detectNew(){const incoming=state.messages.filter(x=>x.direction==='incoming'&&x.whatsapp_message_id);const ids=new Set(incoming.map(x=>x.whatsapp_message_id));if(!state.initialLoad){incoming.filter(x=>!state.lastIncomingIds.has(x.whatsapp_message_id)).forEach(m=>{const c=state.conversations.find(c=>c.phone===m.phone);playDing();browserNotify(c||{phone:m.phone},m);showToast(`New message from ${(c&&c.patientName)||m.phone}`)})}state.lastIncomingIds=ids;state.initialLoad=false}
 function updateTitle(){const n=state.conversations.reduce((s,c)=>s+c.unreadCount,0);document.title=n?`(${n}) Dr Mina Inbox`:'Dr Mina Inbox';$('inboxSummary').textContent=n?`${n} unread message${n===1?'':'s'}`:'All caught up'}
 function visibleConversations(){const q=search.value.trim().toLowerCase();return state.conversations.filter(c=>{if(state.filter==='unread'&&!c.unreadCount)return false;if(state.filter==='reviews'&&!c.rating)return false;if(!q)return true;return [c.phone,c.patientName,...c.messages.map(x=>x.message||'')].join(' ').toLowerCase().includes(q)})}
-function renderList(){const arr=visibleConversations();if(!arr.length){list.innerHTML='<div class="empty">No conversations found.</div>';return}list.innerHTML=arr.map(c=>{const last=c.lastMessage,name=repairText(c.patientName||c.phone),dir=last.direction==='outgoing'?'You: ':'';return `<button class="conversation-item ${state.selectedPhone===c.phone?'active':''} ${c.unreadCount?'unread':''}" data-phone="${esc(c.phone)}"><span class="avatar">${esc(initials(c))}</span><span class="conv-main"><span class="conv-top"><span class="name">${esc(name)}</span><span class="time">${esc(time(last.created_timestamp))}</span></span><span class="preview">${esc(dir+mediaPreviewText(last.message||''))}</span><span class="conv-foot">${c.rating?`<span class="rating">&#11088; ${esc(c.rating)}/5</span>`:''}</span></span>${c.unreadCount?`<span class="unread-badge">${c.unreadCount}</span>`:''}</button>`}).join('');list.querySelectorAll('.conversation-item').forEach(b=>{b.onclick=()=>select(b.dataset.phone)})}
+
+const CONV_PREF_KEY='patientConnectConversationPrefsV1';
+function loadConvPrefs(){try{return JSON.parse(localStorage.getItem(CONV_PREF_KEY)||'{}')||{}}catch{return{}}}
+function convPref(phone){return loadConvPrefs()[phone]||{}}
+function setConvPref(phone,patch){const a=loadConvPrefs();a[phone]={...(a[phone]||{}),...patch};localStorage.setItem(CONV_PREF_KEY,JSON.stringify(a))}
+function closeConvMenu(){document.getElementById('conversationMenu')?.remove()}
+function openConvMenu(el,phone){
+ closeConvMenu(); const p=convPref(phone),m=document.createElement('div');m.id='conversationMenu';m.className='conv-menu';
+ m.innerHTML=`<button data-a="pin">📌 ${p.pinned?'Unpin conversation':'Pin conversation'}</button>
+ <button data-a="unread">🔵 Mark as unread</button>
+ <button data-a="favorite">⭐ ${p.favorite?'Remove from favorites':'Add to favorites'}</button>
+ <button data-a="archive">📦 ${p.archived?'Unarchive conversation':'Archive conversation'}</button>
+ <button data-a="profile">👤 Patient profile</button>`;
+ document.body.appendChild(m);const r=el.getBoundingClientRect();m.style.left=Math.max(8,Math.min(innerWidth-228,r.right-220))+'px';m.style.top=Math.min(innerHeight-m.offsetHeight-8,r.bottom+4)+'px';
+ m.onclick=e=>{const a=e.target.closest('button')?.dataset.a;if(!a)return;
+  if(a==='pin')setConvPref(phone,{pinned:!convPref(phone).pinned});
+  if(a==='favorite')setConvPref(phone,{favorite:!convPref(phone).favorite});
+  if(a==='archive')setConvPref(phone,{archived:!convPref(phone).archived});
+  if(a==='unread'){closeConvMenu();markRead(phone,false);return}
+  if(a==='profile'){closeConvMenu();select(phone);setTimeout(()=>profileButton.click(),50);return}
+  closeConvMenu();renderList();
+ };
+}
+document.addEventListener('click',e=>{if(!e.target.closest('#conversationMenu')&&!e.target.closest('.menu-btn'))closeConvMenu()});
+
+function renderList(){
+ const arr=visibleConversations();
+ if(!arr.length){list.innerHTML='<div class="empty">No conversations found.</div>';return}
+ list.innerHTML=arr.map(c=>{
+  const last=c.lastMessage,name=repairText(c.patientName||c.phone),dir=last.direction==='outgoing'?'You: ':'',p=convPref(c.phone);
+  return `<button class="conversation-item ${state.selectedPhone===c.phone?'active':''} ${c.unreadCount?'unread':''} ${p.pinned?'is-pinned':''} ${p.favorite?'is-favorite':''}" data-phone="${esc(c.phone)}">
+   <span class="avatar">${esc(initials(c))}</span><span class="conv-main"><span class="conv-top"><span class="name">${esc(name)}</span><span class="time">${esc(time(last.created_timestamp))}</span></span>
+   <span class="preview">${esc(dir+mediaPreviewText(last.message||''))}</span><span class="conv-foot">${c.rating?`<span class="rating">&#11088; ${esc(c.rating)}/5</span>`:''}</span></span>
+   ${c.unreadCount?`<span class="unread-badge">${c.unreadCount}</span>`:''}<span class="menu-btn" title="Conversation menu" aria-label="Conversation menu">&#8942;</span></button>`
+ }).join('');
+ list.querySelectorAll('.conversation-item').forEach(b=>{b.onclick=e=>{const mb=e.target.closest('.menu-btn');if(mb){e.preventDefault();e.stopPropagation();openConvMenu(mb,b.dataset.phone)}else select(b.dataset.phone)}})
+}
 async function markRead(phone,isRead=true){try{const r=await fetch('/api/inbox/read',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,isRead})});const j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||'Could not update read status');state.messages.forEach(m=>{if(m.phone===phone&&m.direction==='incoming')m.is_read=isRead});if(!isRead){const incoming=state.messages.filter(m=>m.phone===phone&&m.direction==='incoming');if(incoming.length)incoming.at(-1).is_read=false}state.conversations=build(state.messages);renderList();updateTitle()}catch(e){showToast(e.message)}}
 function select(phone){state.selectedPhone=phone;const c=state.conversations.find(x=>x.phone===phone);if(!c)return;chatPhone.textContent=repairText(c.patientName||c.phone);chatSubtitle.textContent=c.patientName?c.phone:`${c.messages.length} messages`;chatAvatar.textContent=initials(c);editNameButton.classList.add('visible');editNameButton.textContent=c.patientName?'Edit name':'+ Add name';profileButton.classList.add('visible');reply.disabled=send.disabled=emojiButton.disabled=attachButton.disabled=false;micButton.disabled=false;renderMessages(c.messages);renderList();app.classList.add('chat-open');if(c.unreadCount)markRead(phone,true);reply.focus()}
 function openNameModal(){const c=state.conversations.find(x=>x.phone===state.selectedPhone);if(!c)return;patientNameInput.value=repairText(c.patientName||'');nameModalPhone.textContent=`Save a name for ${c.phone}. It will appear in the inbox, search and notifications.`;nameModal.classList.add('open');setTimeout(()=>{patientNameInput.focus();patientNameInput.select()},0)}
