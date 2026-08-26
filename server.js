@@ -473,7 +473,9 @@ async function sendMessage(to, message, contextMessageId = null) {
   };
 
   if (contextMessageId) {
-    bodyObject.context = { message_id: String(contextMessageId) };
+    bodyObject.context = {
+      message_id: String(contextMessageId)
+    };
   }
 
   const body = JSON.stringify(bodyObject);
@@ -559,6 +561,19 @@ function encodeMediaMessage({ mediaId, mediaType, filename, mimeType, caption = 
   ).toString('base64url');
 }
 
+
+
+function decodeStoredMediaMessage(value) {
+  const raw = String(value || '');
+  if (!raw.startsWith(MEDIA_MESSAGE_PREFIX)) return null;
+  try {
+    return JSON.parse(
+      Buffer.from(raw.slice(MEDIA_MESSAGE_PREFIX.length), 'base64url').toString('utf8')
+    );
+  } catch {
+    return null;
+  }
+}
 
 function getIncomingMediaPayload(message) {
   if (!message || !message.type) return null;
@@ -1358,6 +1373,7 @@ async function handleInboxQuotedReply(request, response) {
   try {
     const rawBody = await readRequestBody(request);
     const data = JSON.parse(rawBody || '{}');
+
     const phone = normalizePhone(data.phone);
     const message = String(data.message || '').trim();
     const contextMessageId = String(data.contextMessageId || '').trim();
@@ -1385,6 +1401,54 @@ async function handleInboxQuotedReply(request, response) {
     });
   } catch (error) {
     console.error('Quoted reply error:', error.message);
+    sendJson(response, 500, { success: false, error: error.message });
+  }
+}
+
+async function handleInboxForward(request, response) {
+  try {
+    const rawBody = await readRequestBody(request);
+    const data = JSON.parse(rawBody || '{}');
+    const phone = normalizePhone(data.phone);
+    const storedMessage = String(data.storedMessage || '');
+
+    if (!phone || !storedMessage) {
+      sendJson(response, 400, { success: false, error: 'Forward information is incomplete.' });
+      return;
+    }
+
+    const media = decodeStoredMediaMessage(storedMessage);
+    let result;
+    let savedMessage = storedMessage;
+
+    if (media) {
+      result = await sendMediaMessage(
+        phone,
+        media.mediaId,
+        media.mediaType,
+        media.filename,
+        media.caption || ''
+      );
+    } else {
+      result = await sendMessage(phone, storedMessage);
+    }
+
+    await saveMessageToSupabase({
+      phone,
+      direction: 'outgoing',
+      message: savedMessage,
+      status: 'sent',
+      replied: true,
+      replyMessage: 'Forwarded message',
+      whatsappMessageId: result?.whatsappMessageId || null
+    });
+
+    sendJson(response, 200, {
+      success: true,
+      whatsappMessageId: result?.whatsappMessageId || null
+    });
+  } catch (error) {
+    console.error('Forward message error:', error.message);
     sendJson(response, 500, { success: false, error: error.message });
   }
 }
@@ -1738,6 +1802,16 @@ const server = http.createServer(async (request, response) => {
   ) {
     if (!requireAuthentication(request, response, true)) return;
     await handleInboxQuotedReply(request, response);
+    return;
+  }
+
+  /* Forward message API */
+  if (
+    request.method === 'POST' &&
+    url.pathname === '/api/inbox/forward'
+  ) {
+    if (!requireAuthentication(request, response, true)) return;
+    await handleInboxForward(request, response);
     return;
   }
 
