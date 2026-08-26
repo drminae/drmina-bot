@@ -41,11 +41,12 @@
 .conversation-item.is-pinned .name:before{content:"📌 ";font-size:12px}
 .conversation-item.is-favorite .name:after{content:" ★";color:#d39b00;font-size:12px}
 
-.message-row{position:relative}
-.reply-trigger{position:absolute;top:4px;width:28px;height:28px;border:0;border-radius:50%;background:rgba(255,255,255,.95);box-shadow:0 1px 4px rgba(0,0,0,.10);cursor:pointer;display:none;place-items:center;color:#52615d;font-size:20px;font-weight:700;line-height:1;z-index:4}
-.message-row:hover .reply-trigger,.reply-trigger:focus{display:grid}
-.message-row.incoming .reply-trigger{right:8px}
-.message-row.outgoing .reply-trigger{left:8px}
+.message-row{position:relative;gap:4px;align-items:flex-start}
+.reply-trigger{position:static;flex:0 0 28px;width:28px;height:28px;margin-top:2px;border:0;border-radius:50%;background:rgba(255,255,255,.95);box-shadow:0 1px 4px rgba(0,0,0,.10);cursor:pointer;display:grid;place-items:center;color:#52615d;font-size:20px;font-weight:700;line-height:1;z-index:4;opacity:0;pointer-events:none;transition:opacity .12s ease,background .12s ease}
+.message-row:hover .reply-trigger,.reply-trigger:focus{opacity:1;pointer-events:auto}
+.message-row.incoming .bubble{order:1}.message-row.incoming .reply-trigger{order:2}
+.message-row.outgoing .reply-trigger{order:1}.message-row.outgoing .bubble{order:2}
+.reply-trigger:hover{background:#eef4f2}
 .reply-compose{display:none;margin:8px 14px 0;padding:9px 11px;border-left:4px solid var(--brand);background:#f4faf8;border-radius:10px;position:relative}
 .reply-compose.show{display:block}
 .reply-compose-label{font-size:11px;font-weight:800;color:var(--brand);margin-bottom:2px}
