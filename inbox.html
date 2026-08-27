@@ -42,11 +42,11 @@
 .conversation-item.is-favorite .name:after{content:" ★";color:#d39b00;font-size:12px}
 
     .message-row{position:relative}
-    .message-row .bubble{padding-right:34px}
-    .message-chevron{position:absolute;top:3px;right:3px;width:25px;height:25px;border:0;border-radius:50%;background:transparent;cursor:pointer;display:grid;place-items:center;color:#687873;opacity:0;pointer-events:none;transition:opacity .12s ease,background .12s ease;z-index:5}
+    .message-row .bubble{padding-right:32px}
+    .message-chevron{position:absolute;top:4px;right:4px;width:23px;height:23px;border:0;border-radius:4px;background:transparent;cursor:pointer;display:grid;place-items:center;color:#64726e;opacity:0;pointer-events:none;z-index:6;transition:opacity .12s ease,background .12s ease}
     .message-row:hover .message-chevron,.message-chevron:focus{opacity:1;pointer-events:auto}
-    .message-chevron:hover,.message-chevron:focus{background:rgba(255,255,255,.75);outline:none}
-    .message-chevron svg{width:15px;height:15px;display:block}
+    .message-chevron:hover,.message-chevron:focus{background:rgba(0,0,0,.055);outline:none}
+    .message-chevron svg{width:14px;height:14px;display:block}
     .message-menu{position:fixed;z-index:1200;width:220px;padding:6px;background:#fff;border:1px solid var(--line);border-radius:13px;box-shadow:0 14px 34px rgba(0,0,0,.20)}
     .message-menu button{width:100%;border:0;background:transparent;text-align:left;padding:10px 11px;border-radius:8px;cursor:pointer;font:inherit;color:var(--ink);display:flex;align-items:center;gap:9px}
     .message-menu button:hover{background:#f0f7f5}
