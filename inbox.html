@@ -40,6 +40,96 @@
 .menu-btn{cursor:pointer}
 .conversation-item.is-pinned .name:before{content:"📌 ";font-size:12px}
 .conversation-item.is-favorite .name:after{content:" ★";color:#d39b00;font-size:12px}
+
+    /* === v1.8.0 Phase 1: WhatsApp-style visual polish === */
+    .messages{padding:18px 24px 20px;background:
+      radial-gradient(circle at 1px 1px, rgba(89,103,98,.08) 1px, transparent 1.2px);
+      background-size:18px 18px}
+    .message-row{position:relative;margin:3px 0;display:flex}
+    .message-row.incoming{justify-content:flex-start}
+    .message-row.outgoing{justify-content:flex-end}
+    .message-row .bubble{
+      position:relative;
+      max-width:min(72%,760px);
+      padding:8px 34px 7px 10px;
+      border-radius:9px;
+      box-shadow:0 1px 1px rgba(0,0,0,.06);
+      line-height:1.38
+    }
+    .message-row.incoming .bubble{
+      background:#fff;
+      border-top-left-radius:3px
+    }
+    .message-row.outgoing .bubble{
+      background:#d9ffd1;
+      border-top-right-radius:3px
+    }
+    .message-row .bubble:before{
+      content:"";
+      position:absolute;
+      top:0;
+      width:0;
+      height:0;
+      border-style:solid
+    }
+    .message-row.incoming .bubble:before{
+      left:-7px;
+      border-width:0 7px 7px 0;
+      border-color:transparent #fff transparent transparent
+    }
+    .message-row.outgoing .bubble:before{
+      right:-7px;
+      border-width:0 0 7px 7px;
+      border-color:transparent transparent transparent #d9ffd1
+    }
+    .wa-msg-chevron{
+      position:absolute;
+      top:2px;
+      right:3px;
+      width:25px;
+      height:25px;
+      border:0;
+      border-radius:4px;
+      background:transparent;
+      display:grid;
+      place-items:center;
+      color:#6f7d78;
+      opacity:0;
+      pointer-events:none;
+      cursor:pointer;
+      transition:opacity .12s ease,background .12s ease;
+      z-index:4
+    }
+    .message-row:hover .wa-msg-chevron,.wa-msg-chevron:focus{
+      opacity:1;
+      pointer-events:auto
+    }
+    .wa-msg-chevron:hover,.wa-msg-chevron:focus{
+      background:rgba(0,0,0,.06);
+      outline:none
+    }
+    .wa-msg-chevron svg{width:14px;height:14px}
+    .message-meta{gap:4px;margin-top:2px;font-size:10px;color:#6f7d78}
+    .date-separator span{
+      background:#fff;
+      border:1px solid #e4ebe8;
+      box-shadow:0 1px 1px rgba(0,0,0,.05);
+      border-radius:8px;
+      padding:6px 9px;
+      font-size:10px;
+      letter-spacing:.02em
+    }
+    .composer-wrap{background:#f3f7f5;border-top:1px solid var(--line)}
+    .composer{padding:10px 14px 12px;gap:8px}
+    .composer textarea{
+      background:#fff;
+      border-radius:12px;
+      min-height:48px;
+      padding:13px 14px
+    }
+    .icon-btn{background:#fff}
+    .send{border-radius:12px}
+
 </style>
 </head>
 <body>
@@ -180,7 +270,7 @@ let viewerZoom=1,viewerRotation=0;
 function openMediaViewer(image){viewerZoom=1;viewerRotation=0;mediaViewerImage.style.setProperty('--zoom',viewerZoom);mediaViewerImage.style.setProperty('--rotation',viewerRotation+'deg');mediaViewerImage.src=image.src;mediaViewerName.textContent=image.dataset.mediaName||'Image';mediaDownload.href=`/api/inbox/media-file?mediaId=${encodeURIComponent(image.dataset.mediaId)}&download=1`;mediaViewer.classList.add('open');mediaViewer.setAttribute('aria-hidden','false')}
 function closeMediaViewer(){mediaViewer.classList.remove('open');mediaViewer.setAttribute('aria-hidden','true');mediaViewerImage.removeAttribute('src')}
 function ticks(status){const s=String(status||'').toLowerCase();if(s==='read')return'<span class="ticks read">&#10003;&#10003;</span>';if(s==='delivered')return'<span class="ticks">&#10003;&#10003;</span>';if(['sent','manual_inbox_reply','google_review_sent','feedback_acknowledged','awaiting_feedback'].includes(s))return'<span class="ticks">&#10003;</span>';if(s==='failed')return'<span style="color:#d92d20">!</span>';return''}
-function renderMessages(messages){if(!messages.length){msgBox.innerHTML='<div class="empty">No messages.</div>';return}let html='',lastDay='',unreadShown=false;messages.forEach(m=>{const dk=dayKey(m.created_timestamp);if(dk!==lastDay){html+=`<div class="date-separator"><span>${dayLabel(m.created_timestamp)}</span></div>`;lastDay=dk}if(!unreadShown&&m.direction==='incoming'&&m.is_read===false){html+='<div class="unread-line">UNREAD MESSAGES</div>';unreadShown=true}const out=m.direction==='outgoing';html+=`<div class="message-row ${out?'outgoing':'incoming'}"><div class="bubble">${renderMessageBody(m)}<div class="message-meta"><span>${esc(time(m.created_timestamp))}</span>${out?ticks(m.status):''}</div></div></div>`});msgBox.innerHTML=html;msgBox.scrollTop=msgBox.scrollHeight}
+function renderMessages(messages){if(!messages.length){msgBox.innerHTML='<div class="empty">No messages.</div>';return}let html='',lastDay='',unreadShown=false;messages.forEach(m=>{const dk=dayKey(m.created_timestamp);if(dk!==lastDay){html+=`<div class="date-separator"><span>${dayLabel(m.created_timestamp)}</span></div>`;lastDay=dk}if(!unreadShown&&m.direction==='incoming'&&m.is_read===false){html+='<div class="unread-line">UNREAD MESSAGES</div>';unreadShown=true}const out=m.direction==='outgoing';html+=`<div class="message-row ${out?'outgoing':'incoming'}"><div class="bubble"><button class="wa-msg-chevron" type="button" aria-label="Message options" title="Message options"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 9.5 12 14l5-4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>${renderMessageBody(m)}<div class="message-meta"><span>${esc(time(m.created_timestamp))}</span>${out?ticks(m.status):''}</div></div></div>`});msgBox.innerHTML=html;msgBox.scrollTop=msgBox.scrollHeight}
 async function load({keep=true}={}){try{statusBar.textContent='Syncing...';const r=await fetch('/api/inbox/messages',{credentials:'same-origin',cache:'no-store'});if(r.status===401){location='/login';return}const j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||'Unable to load messages');state.messages=j.messages||[];state.conversations=build(state.messages);detectNew();renderList();updateTitle();if(keep&&state.selectedPhone){const c=state.conversations.find(x=>x.phone===state.selectedPhone);if(c){chatPhone.textContent=repairText(c.patientName||c.phone);chatSubtitle.textContent=c.patientName?c.phone:`${c.messages.length} messages`;chatAvatar.textContent=initials(c);editNameButton.classList.add('visible');editNameButton.textContent=c.patientName?'Edit name':'+ Add name';renderMessages(c.messages)}}statusBar.textContent=`Updated ${time(new Date())}`}catch(e){statusBar.textContent=e.message;if(state.initialLoad)list.innerHTML=`<div class="error">${esc(e.message)}</div>`}}
 function fileSizeLabel(bytes){if(bytes<1024)return`${bytes} B`;if(bytes<1024*1024)return`${(bytes/1024).toFixed(1)} KB`;return`${(bytes/1024/1024).toFixed(1)} MB`}
 function revokeAttachment(item){if(item?.previewUrl)URL.revokeObjectURL(item.previewUrl)}
