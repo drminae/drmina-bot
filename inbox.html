@@ -130,6 +130,10 @@
     .icon-btn{background:#fff}
     .send{border-radius:12px}
 
+
+.wa-copy-popover{position:fixed;z-index:1200;min-width:118px;padding:5px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.18)}
+.wa-copy-popover button{width:100%;border:0;background:transparent;text-align:left;padding:9px 10px;border-radius:7px;cursor:pointer;font:inherit;color:var(--ink)}
+.wa-copy-popover button:hover{background:#f0f7f5}
 </style>
 </head>
 <body>
@@ -338,6 +342,51 @@ reply.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();composer
 msgBox.addEventListener('click',e=>{const image=e.target.closest('.media-image');if(image)openMediaViewer(image)});mediaViewerClose.onclick=closeMediaViewer;mediaViewer.onclick=e=>{if(e.target===mediaViewer)closeMediaViewer()};mediaZoomIn.onclick=()=>{viewerZoom=Math.min(4,viewerZoom+.25);mediaViewerImage.style.setProperty('--zoom',viewerZoom)};mediaZoomOut.onclick=()=>{viewerZoom=Math.max(.5,viewerZoom-.25);mediaViewerImage.style.setProperty('--zoom',viewerZoom)};mediaRotate.onclick=()=>{viewerRotation=(viewerRotation+90)%360;mediaViewerImage.style.setProperty('--rotation',viewerRotation+'deg')};
 profileButton.onclick=openProfile;profileClose.onclick=closeProfile;profileOverlay.onclick=closeProfile;profileTags.onclick=e=>{const b=e.target.closest('.tag-chip');if(b)b.classList.toggle('active')};profileSave.onclick=saveProfile;editNameButton.onclick=openNameModal;nameForm.onsubmit=savePatientName;cancelNameButton.onclick=closeNameModal;nameModal.onclick=e=>{if(e.target===nameModal)closeNameModal()};document.addEventListener('keydown',e=>{if(e.key==='Escape'&&nameModal.classList.contains('open'))closeNameModal()});
 load({keep:false});setInterval(()=>load(),5000);
+
+/* v1.8.1a: isolated Copy-only action. Message rendering/loading is untouched. */
+(function(){
+  function closeMenu(){ document.getElementById('waCopyPopover')?.remove(); }
+
+  async function copyMessage(bubble){
+    const clone=bubble.cloneNode(true);
+    clone.querySelectorAll('.wa-msg-chevron,.message-meta').forEach(el=>el.remove());
+    const text=(clone.innerText||clone.textContent||'').trim();
+    if(!text){ showToast('Nothing to copy'); return; }
+    try{
+      await navigator.clipboard.writeText(text);
+    }catch(err){
+      const ta=document.createElement('textarea');
+      ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    }
+    showToast('Message copied');
+  }
+
+  document.addEventListener('click',function(e){
+    const arrow=e.target.closest('.wa-msg-chevron');
+    if(arrow){
+      e.preventDefault(); e.stopPropagation(); closeMenu();
+      const bubble=arrow.closest('.bubble');
+      if(!bubble) return;
+
+      const menu=document.createElement('div');
+      menu.id='waCopyPopover'; menu.className='wa-copy-popover';
+      menu.innerHTML='<button type="button">📋&nbsp;&nbsp;Copy</button>';
+      document.body.appendChild(menu);
+
+      const r=arrow.getBoundingClientRect();
+      const w=menu.offsetWidth||118, h=menu.offsetHeight||44;
+      menu.style.left=Math.max(8,Math.min(innerWidth-w-8,r.right-w))+'px';
+      menu.style.top=Math.max(8,Math.min(innerHeight-h-8,r.bottom+4))+'px';
+
+      menu.querySelector('button').onclick=async ev=>{
+        ev.stopPropagation(); await copyMessage(bubble); closeMenu();
+      };
+      return;
+    }
+    if(!e.target.closest('#waCopyPopover')) closeMenu();
+  });
+})();
 </script>
 </body>
 </html>
