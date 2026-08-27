@@ -42,10 +42,11 @@
 .conversation-item.is-favorite .name:after{content:" ★";color:#d39b00;font-size:12px}
 
     .message-row{position:relative}
-    .message-chevron{position:absolute;top:5px;width:26px;height:26px;border:0;border-radius:50%;background:rgba(255,255,255,.94);box-shadow:0 1px 3px rgba(0,0,0,.08);cursor:pointer;display:none;place-items:center;color:#56635f;font-size:17px;line-height:1;z-index:5}
-    .message-row:hover .message-chevron,.message-chevron:focus{display:grid}
-    .message-row.incoming .message-chevron{right:-32px}
-    .message-row.outgoing .message-chevron{left:-32px}
+    .message-row .bubble{padding-right:34px}
+    .message-chevron{position:absolute;top:3px;right:3px;width:25px;height:25px;border:0;border-radius:50%;background:transparent;cursor:pointer;display:grid;place-items:center;color:#687873;opacity:0;pointer-events:none;transition:opacity .12s ease,background .12s ease;z-index:5}
+    .message-row:hover .message-chevron,.message-chevron:focus{opacity:1;pointer-events:auto}
+    .message-chevron:hover,.message-chevron:focus{background:rgba(255,255,255,.75);outline:none}
+    .message-chevron svg{width:15px;height:15px;display:block}
     .message-menu{position:fixed;z-index:1200;width:220px;padding:6px;background:#fff;border:1px solid var(--line);border-radius:13px;box-shadow:0 14px 34px rgba(0,0,0,.20)}
     .message-menu button{width:100%;border:0;background:transparent;text-align:left;padding:10px 11px;border-radius:8px;cursor:pointer;font:inherit;color:var(--ink);display:flex;align-items:center;gap:9px}
     .message-menu button:hover{background:#f0f7f5}
@@ -296,8 +297,7 @@ function renderMessages(messages){
     if(!unreadShown&&m.direction==='incoming'&&m.is_read===false){html+='<div class="unread-line">UNREAD MESSAGES</div>';unreadShown=true}
     const out=m.direction==='outgoing',pref=getMsgPref(messageKey(m));
     html+=`<div class="message-row ${out?'outgoing':'incoming'}" data-message-index="${index}">
-      <button class="message-chevron" type="button" aria-label="Message options" title="Message options">&#8964;</button>
-      <div class="bubble">${pref.pinned?'<span class="message-pin">📌</span>':''}${pref.starred?'<span class="message-star">★</span>':''}${renderMessageBody(m)}<div class="message-meta"><span>${esc(time(m.created_timestamp))}</span>${out?ticks(m.status):''}</div></div>
+      <div class="bubble"><button class="message-chevron" type="button" aria-label="Message options" title="Message options"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 9.5 12 14l5-4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>${pref.pinned?'<span class="message-pin">📌</span>':''}${pref.starred?'<span class="message-star">★</span>':''}${renderMessageBody(m)}<div class="message-meta"><span>${esc(time(m.created_timestamp))}</span>${out?ticks(m.status):''}</div></div>
     </div>`
   });
   msgBox.innerHTML=html;
