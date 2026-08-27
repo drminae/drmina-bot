@@ -134,6 +134,12 @@
 .wa-copy-popover{position:fixed;z-index:1200;min-width:118px;padding:5px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.18)}
 .wa-copy-popover button{width:100%;border:0;background:transparent;text-align:left;padding:9px 10px;border-radius:7px;cursor:pointer;font:inherit;color:var(--ink)}
 .wa-copy-popover button:hover{background:#f0f7f5}
+
+.wa-reply-preview{display:none;margin:6px 0 0;padding:8px 34px 8px 10px;border-left:4px solid var(--brand);background:#f4faf8;border-radius:8px;position:relative;font-size:12px}
+.wa-reply-preview.show{display:block}
+.wa-reply-preview strong{display:block;color:var(--brand);margin-bottom:2px}
+.wa-reply-preview .wa-reply-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.wa-reply-preview .wa-reply-close{position:absolute;right:7px;top:7px;border:0;background:transparent;cursor:pointer;font-size:18px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -149,7 +155,7 @@
   <section class="chat">
     <header class="chat-header"><button id="backButton" class="mobile-back"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg></button><div class="avatar" id="chatAvatar">?</div><div><div class="patient-title-row"><h2 id="chatPhone">Select a conversation</h2><button id="editNameButton" class="edit-name-btn" type="button" title="Edit patient name">Edit name</button></div><p id="chatSubtitle">Messages will appear here</p></div><button id="profileButton" class="icon-btn profile-btn" type="button" title="Patient profile"><span>&#128100;</span><span>Profile</span></button><div class="header-spacer"></div><div class="connection"><span class="pulse"></span>Live</div></header>
     <div id="messages" class="messages"><div class="empty"><div style="font-size:48px;margin-bottom:10px">&#128172;</div>Select a patient from the inbox.</div></div>
-    <div class="composer-wrap"><div class="emoji-panel" id="emojiPanel"><div class="emoji-grid" id="emojiGrid"></div></div><div id="attachmentPreview" class="attachment-preview"><div class="attachment-preview-head"><div id="attachmentPreviewTitle" class="attachment-preview-title">Selected files</div><button id="attachmentClear" class="attachment-clear" type="button">Clear all</button></div><div id="attachmentList" class="attachment-list"></div></div><div id="voiceRecordBar" class="voice-record-bar"><span class="voice-record-dot"></span><span id="voiceRecordTime" class="voice-record-time">00:00</span><span class="voice-record-label">Recording voice note...</span><button id="voiceRecordCancel" class="voice-record-cancel" type="button">Cancel</button></div><form id="composer" class="composer"><button id="emojiButton" class="icon-btn" type="button" disabled aria-label="Choose emoji">&#128522;</button><button id="attachButton" class="icon-btn attach-btn" type="button" disabled aria-label="Choose attachments" title="Attach images, PDFs or documents"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l10-10a4 4 0 0 1 5.7 5.7l-10 10a2 2 0 0 1-2.8-2.8l9.3-9.3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><button id="micButton" class="icon-btn mic-btn" type="button" disabled aria-label="Record voice note" title="Record voice note"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button><input id="attachmentInput" class="attach-input" type="file" multiple accept="image/jpeg,image/png,video/mp4,audio/aac,audio/mp4,audio/mpeg,audio/amr,audio/ogg,application/pdf,text/plain,.doc,.docx,.xls,.xlsx,.ppt,.pptx"><textarea id="replyText" placeholder="Type a message or caption" disabled></textarea><button id="sendButton" class="send" type="submit" disabled><span>Send</span><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 4l16 8-16 8 3-8-3-8Z" fill="currentColor"/></svg></button></form><div id="statusBar" class="status-bar">Secure inbox connected.</div></div>
+    <div class="composer-wrap"><div class="emoji-panel" id="emojiPanel"><div class="emoji-grid" id="emojiGrid"></div></div><div id="attachmentPreview" class="attachment-preview"><div class="attachment-preview-head"><div id="attachmentPreviewTitle" class="attachment-preview-title">Selected files</div><button id="attachmentClear" class="attachment-clear" type="button">Clear all</button></div><div id="attachmentList" class="attachment-list"></div></div><div id="voiceRecordBar" class="voice-record-bar"><span class="voice-record-dot"></span><span id="voiceRecordTime" class="voice-record-time">00:00</span><span class="voice-record-label">Recording voice note...</span><button id="voiceRecordCancel" class="voice-record-cancel" type="button">Cancel</button></div><form id="composer" class="composer"><button id="emojiButton" class="icon-btn" type="button" disabled aria-label="Choose emoji">&#128522;</button><button id="attachButton" class="icon-btn attach-btn" type="button" disabled aria-label="Choose attachments" title="Attach images, PDFs or documents"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l10-10a4 4 0 0 1 5.7 5.7l-10 10a2 2 0 0 1-2.8-2.8l9.3-9.3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><button id="micButton" class="icon-btn mic-btn" type="button" disabled aria-label="Record voice note" title="Record voice note"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button><input id="attachmentInput" class="attach-input" type="file" multiple accept="image/jpeg,image/png,video/mp4,audio/aac,audio/mp4,audio/mpeg,audio/amr,audio/ogg,application/pdf,text/plain,.doc,.docx,.xls,.xlsx,.ppt,.pptx"><div id="waReplyPreview" class="wa-reply-preview"><strong>Replying to</strong><div id="waReplyText" class="wa-reply-text"></div><button id="waReplyClose" class="wa-reply-close" type="button">×</button></div><textarea id="replyText" placeholder="Type a message or caption" disabled></textarea><button id="sendButton" class="send" type="submit" disabled><span>Send</span><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 4l16 8-16 8 3-8-3-8Z" fill="currentColor"/></svg></button></form><div id="statusBar" class="status-bar">Secure inbox connected.</div></div>
   </section>
 </main>
 <div id="mediaViewer" class="media-viewer" aria-hidden="true"><div id="mediaViewerName" class="media-viewer-name"></div><div class="media-viewer-toolbar"><button id="mediaZoomOut" class="media-viewer-btn" type="button" title="Zoom out" aria-label="Zoom out"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12H18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button><button id="mediaZoomIn" class="media-viewer-btn" type="button">+</button><button id="mediaRotate" class="media-viewer-btn" type="button">Rotate</button><a id="mediaDownload" class="media-viewer-btn" href="#">Download</a><button id="mediaViewerClose" class="media-viewer-btn" type="button">Close</button></div><img id="mediaViewerImage" alt="Attachment preview"></div><div class="toast" id="toast"></div>
@@ -371,7 +377,7 @@ load({keep:false});setInterval(()=>load(),5000);
 
       const menu=document.createElement('div');
       menu.id='waCopyPopover'; menu.className='wa-copy-popover';
-      menu.innerHTML='<button type="button">📋&nbsp;&nbsp;Copy</button>';
+      menu.innerHTML='<button type="button" data-action="reply">↩️&nbsp;&nbsp;Reply</button><button type="button" data-action="copy">📋&nbsp;&nbsp;Copy</button>';
       document.body.appendChild(menu);
 
       const r=arrow.getBoundingClientRect();
@@ -379,12 +385,42 @@ load({keep:false});setInterval(()=>load(),5000);
       menu.style.left=Math.max(8,Math.min(innerWidth-w-8,r.right-w))+'px';
       menu.style.top=Math.max(8,Math.min(innerHeight-h-8,r.bottom+4))+'px';
 
-      menu.querySelector('button').onclick=async ev=>{
-        ev.stopPropagation(); await copyMessage(bubble); closeMenu();
+      menu.onclick=async ev=>{
+        const button=ev.target.closest('button');
+        if(!button)return;
+        ev.stopPropagation();
+        if(button.dataset.action==='copy'){
+          await copyMessage(bubble);
+        }else if(button.dataset.action==='reply'){
+          const clone=bubble.cloneNode(true);
+          clone.querySelectorAll('.wa-msg-chevron,.message-meta').forEach(el=>el.remove());
+          const text=(clone.innerText||clone.textContent||'').trim();
+          window.__waReplyTarget={text:text};
+          const preview=document.getElementById('waReplyPreview');
+          const previewText=document.getElementById('waReplyText');
+          if(preview&&previewText){
+            previewText.textContent=text||'Message';
+            preview.classList.add('show');
+          }
+          const composer=document.querySelector('textarea[placeholder="Type a message or caption"],input[placeholder="Type a message or caption"]');
+          composer?.focus();
+          showToast('Reply selected');
+        }
+        closeMenu();
       };
       return;
     }
     if(!e.target.closest('#waCopyPopover')) closeMenu();
+  });
+})();
+
+(function(){
+  document.addEventListener('click',function(e){
+    if(e.target.closest('#waReplyClose')){
+      e.preventDefault();
+      window.__waReplyTarget=null;
+      document.getElementById('waReplyPreview')?.classList.remove('show');
+    }
   });
 })();
 </script>
