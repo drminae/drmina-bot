@@ -442,7 +442,7 @@ async function saveMessageToSupabase({
    SEND WHATSAPP MESSAGE
 ========================================================= */
 
-async function sendMessage(to, message, contextMessageId = null) {
+async function sendMessage(to, message) {
   if (!WA_TOKEN) {
     throw new Error(
       'WA_TOKEN is missing from Render Environment Variables.'
@@ -461,7 +461,7 @@ async function sendMessage(to, message, contextMessageId = null) {
     throw new Error('The WhatsApp phone number is invalid.');
   }
 
-  const bodyObject = {
+  const body = JSON.stringify({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
     to: cleanPhone,
@@ -470,15 +470,7 @@ async function sendMessage(to, message, contextMessageId = null) {
       preview_url: true,
       body: message
     }
-  };
-
-  if (contextMessageId) {
-    bodyObject.context = {
-      message_id: String(contextMessageId)
-    };
-  }
-
-  const body = JSON.stringify(bodyObject);
+  });
 
   const options = {
     hostname: 'graph.facebook.com',
@@ -561,19 +553,6 @@ function encodeMediaMessage({ mediaId, mediaType, filename, mimeType, caption = 
   ).toString('base64url');
 }
 
-
-
-function decodeStoredMediaMessage(value) {
-  const raw = String(value || '');
-  if (!raw.startsWith(MEDIA_MESSAGE_PREFIX)) return null;
-  try {
-    return JSON.parse(
-      Buffer.from(raw.slice(MEDIA_MESSAGE_PREFIX.length), 'base64url').toString('utf8')
-    );
-  } catch {
-    return null;
-  }
-}
 
 function getIncomingMediaPayload(message) {
   if (!message || !message.type) return null;
@@ -1368,91 +1347,6 @@ async function handleInboxReply(request, response) {
   }
 }
 
-
-async function handleInboxQuotedReply(request, response) {
-  try {
-    const rawBody = await readRequestBody(request);
-    const data = JSON.parse(rawBody || '{}');
-
-    const phone = normalizePhone(data.phone);
-    const message = String(data.message || '').trim();
-    const contextMessageId = String(data.contextMessageId || '').trim();
-
-    if (!phone || !message || !contextMessageId) {
-      sendJson(response, 400, { success: false, error: 'Reply information is incomplete.' });
-      return;
-    }
-
-    const result = await sendMessage(phone, message, contextMessageId);
-
-    await saveMessageToSupabase({
-      phone,
-      direction: 'outgoing',
-      message,
-      status: 'manual_inbox_reply',
-      replied: true,
-      replyMessage: message,
-      whatsappMessageId: result.whatsappMessageId
-    });
-
-    sendJson(response, 200, {
-      success: true,
-      whatsappMessageId: result.whatsappMessageId
-    });
-  } catch (error) {
-    console.error('Quoted reply error:', error.message);
-    sendJson(response, 500, { success: false, error: error.message });
-  }
-}
-
-async function handleInboxForward(request, response) {
-  try {
-    const rawBody = await readRequestBody(request);
-    const data = JSON.parse(rawBody || '{}');
-    const phone = normalizePhone(data.phone);
-    const storedMessage = String(data.storedMessage || '');
-
-    if (!phone || !storedMessage) {
-      sendJson(response, 400, { success: false, error: 'Forward information is incomplete.' });
-      return;
-    }
-
-    const media = decodeStoredMediaMessage(storedMessage);
-    let result;
-    let savedMessage = storedMessage;
-
-    if (media) {
-      result = await sendMediaMessage(
-        phone,
-        media.mediaId,
-        media.mediaType,
-        media.filename,
-        media.caption || ''
-      );
-    } else {
-      result = await sendMessage(phone, storedMessage);
-    }
-
-    await saveMessageToSupabase({
-      phone,
-      direction: 'outgoing',
-      message: savedMessage,
-      status: 'sent',
-      replied: true,
-      replyMessage: 'Forwarded message',
-      whatsappMessageId: result?.whatsappMessageId || null
-    });
-
-    sendJson(response, 200, {
-      success: true,
-      whatsappMessageId: result?.whatsappMessageId || null
-    });
-  } catch (error) {
-    console.error('Forward message error:', error.message);
-    sendJson(response, 500, { success: false, error: error.message });
-  }
-}
-
 /* =========================================================
    PATIENT NAME
 ========================================================= */
@@ -1792,26 +1686,6 @@ const server = http.createServer(async (request, response) => {
     }
 
     await handleInboxMedia(request, response);
-    return;
-  }
-
-  /* Quoted reply API */
-  if (
-    request.method === 'POST' &&
-    url.pathname === '/api/inbox/reply-quoted'
-  ) {
-    if (!requireAuthentication(request, response, true)) return;
-    await handleInboxQuotedReply(request, response);
-    return;
-  }
-
-  /* Forward message API */
-  if (
-    request.method === 'POST' &&
-    url.pathname === '/api/inbox/forward'
-  ) {
-    if (!requireAuthentication(request, response, true)) return;
-    await handleInboxForward(request, response);
     return;
   }
 

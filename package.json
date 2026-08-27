@@ -1,7 +1,7 @@
 {
   "name": "dr-mina-review-bot",
-  "version": "1.6.4",
-  "description": "Patient Connect WhatsApp clinic communication platform",
+  "version": "1.7.0-recovery",
+  "description": "Patient Connect stable recovery baseline",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
