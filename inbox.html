@@ -140,6 +140,14 @@
 .wa-reply-preview strong{display:block;color:var(--brand);margin-bottom:2px}
 .wa-reply-preview .wa-reply-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
 .wa-reply-preview .wa-reply-close{position:absolute;right:7px;top:7px;border:0;background:transparent;cursor:pointer;font-size:18px;color:var(--muted)}
+
+.wa-forward-modal{position:fixed;inset:0;background:rgba(12,28,24,.46);display:none;align-items:center;justify-content:center;z-index:1300;padding:18px}
+.wa-forward-modal.show{display:flex}
+.wa-forward-card{width:min(440px,95vw);max-height:76vh;overflow:auto;background:#fff;border-radius:16px;padding:16px;box-shadow:0 18px 60px rgba(0,0,0,.25)}
+.wa-forward-card h3{margin:0 0 10px}
+.wa-forward-list button{width:100%;border:0;background:transparent;text-align:left;padding:10px;border-radius:9px;cursor:pointer;font:inherit;color:var(--ink)}
+.wa-forward-list button:hover{background:#f0f7f5}
+.wa-forward-cancel{margin-top:10px}
 </style>
 </head>
 <body>
@@ -389,7 +397,7 @@ load({keep:false});setInterval(()=>load(),5000);
 
       const menu=document.createElement('div');
       menu.id='waCopyPopover'; menu.className='wa-copy-popover';
-      menu.innerHTML='<button type="button" data-action="reply">↩️&nbsp;&nbsp;Reply</button><button type="button" data-action="copy">📋&nbsp;&nbsp;Copy</button>';
+      menu.innerHTML='<button type="button" data-action="reply">↩️&nbsp;&nbsp;Reply</button><button type="button" data-action="copy">📋&nbsp;&nbsp;Copy</button><button type="button" data-action="forward">➡️&nbsp;&nbsp;Forward</button>';
       document.body.appendChild(menu);
 
       const r=arrow.getBoundingClientRect();
@@ -403,6 +411,25 @@ load({keep:false});setInterval(()=>load(),5000);
         ev.stopPropagation();
         if(button.dataset.action==='copy'){
           await copyMessage(bubble);
+        }else if(button.dataset.action==='forward'){
+          const clone=bubble.cloneNode(true);
+          clone.querySelectorAll('.wa-msg-chevron,.message-meta').forEach(el=>el.remove());
+          const text=(clone.innerText||clone.textContent||'').trim();
+          const hasMedia=!!bubble.querySelector('img,audio,video,.media-link,.media-image');
+          if(hasMedia){
+            showToast('Media forwarding comes in the next upgrade');
+          }else{
+            const modal=document.getElementById('waForwardModal');
+            const list=document.getElementById('waForwardList');
+            if(modal&&list){
+              window.__waForwardText=text;
+              list.innerHTML=state.conversations
+                .filter(c=>c.phone!==state.selectedPhone)
+                .map(c=>`<button type="button" data-forward-phone="${esc(c.phone)}"><strong>${esc(repairText(c.patientName||c.phone))}</strong><br><small>${esc(c.phone)}</small></button>`)
+                .join('')||'<div class="empty">No other conversations.</div>';
+              modal.classList.add('show');
+            }
+          }
         }else if(button.dataset.action==='reply'){
           const clone=bubble.cloneNode(true);
           clone.querySelectorAll('.wa-msg-chevron,.message-meta').forEach(el=>el.remove());
@@ -439,6 +466,51 @@ load({keep:false});setInterval(()=>load(),5000);
     }
   });
 })();
+
+/* v1.8.2a — isolated text forwarding using the existing stable reply API. */
+(function(){
+  const modal=document.getElementById('waForwardModal');
+  const list=document.getElementById('waForwardList');
+  const cancel=document.getElementById('waForwardCancel');
+
+  function closeForward(){
+    modal?.classList.remove('show');
+    window.__waForwardText='';
+  }
+
+  cancel?.addEventListener('click',closeForward);
+  modal?.addEventListener('click',e=>{ if(e.target===modal) closeForward(); });
+
+  list?.addEventListener('click',async e=>{
+    const btn=e.target.closest('[data-forward-phone]');
+    if(!btn)return;
+    const text=String(window.__waForwardText||'').trim();
+    if(!text){ showToast('Nothing to forward'); closeForward(); return; }
+
+    try{
+      btn.disabled=true;
+      await postJson('/api/inbox/reply',{
+        phone:btn.dataset.forwardPhone,
+        message:text
+      });
+      showToast('Message forwarded');
+      closeForward();
+      await load({keep:true});
+    }catch(err){
+      showToast(err.message||'Could not forward');
+    }finally{
+      btn.disabled=false;
+    }
+  });
+})();
 </script>
+
+<div id="waForwardModal" class="wa-forward-modal">
+  <div class="wa-forward-card">
+    <h3>Forward message</h3>
+    <div id="waForwardList" class="wa-forward-list"></div>
+    <button id="waForwardCancel" class="send wa-forward-cancel" type="button">Cancel</button>
+  </div>
+</div>
 </body>
 </html>
