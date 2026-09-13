@@ -148,6 +148,40 @@
 .wa-forward-list{flex:1;overflow:auto;padding:8px 10px}.wa-forward-list button{display:block;width:100%;border:0;background:transparent;text-align:left;padding:11px;border-radius:9px;cursor:pointer;font:inherit;color:var(--ink);pointer-events:auto;position:relative;z-index:1}
 .wa-forward-list button:hover{background:#f0f7f5}
 .wa-forward-footer{padding:10px 14px 14px;border-top:1px solid var(--line);background:#fff;display:flex;justify-content:flex-end}.wa-forward-cancel{margin:0}
+
+.wa-forward-list button.forward-recipient{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  border:1px solid transparent;
+}
+.wa-forward-list button.forward-recipient.selected{
+  background:#eaf7f3;
+  border-color:#b8ded3;
+}
+.wa-forward-check{
+  width:22px;
+  height:22px;
+  border:2px solid #9aa9a4;
+  border-radius:6px;
+  display:grid;
+  place-items:center;
+  flex:0 0 22px;
+  font-size:14px;
+  color:#fff;
+  background:#fff;
+}
+.forward-recipient.selected .wa-forward-check{
+  background:var(--brand);
+  border-color:var(--brand);
+}
+.wa-forward-person{min-width:0;flex:1}
+.wa-forward-person strong,.wa-forward-person small{display:block}
+.wa-forward-actions{padding:10px 14px 14px;border-top:1px solid var(--line);background:#fff;display:flex;gap:8px;justify-content:flex-end}
+.wa-forward-send{min-width:110px}
+.wa-forward-send[disabled]{opacity:.45;cursor:not-allowed}
+.wa-forward-count{margin-right:auto;align-self:center;font-size:12px;color:var(--muted)}
+
 </style>
 </head>
 <body>
@@ -423,10 +457,18 @@ load({keep:false});setInterval(()=>load(),5000);
             const list=document.getElementById('waForwardList');
             if(modal&&list){
               window.__waForwardText=text;
+              window.__waForwardRecipients=new Set();
               list.innerHTML=state.conversations
                 .filter(c=>c.phone!==state.selectedPhone)
-                .map(c=>`<button type="button" data-forward-phone="${esc(c.phone)}"><strong>${esc(repairText(c.patientName||c.phone))}</strong><br><small>${esc(c.phone)}</small></button>`)
+                .map(c=>`<button type="button" class="forward-recipient" data-forward-phone="${esc(c.phone)}">
+                  <span class="wa-forward-check" aria-hidden="true"></span>
+                  <span class="wa-forward-person"><strong>${esc(repairText(c.patientName||c.phone))}</strong><small>${esc(c.phone)}</small></span>
+                </button>`)
                 .join('')||'<div class="empty">No other conversations.</div>';
+              const count=document.getElementById('waForwardCount');
+              const sendBtn=document.getElementById('waForwardSend');
+              if(count)count.textContent='0 selected';
+              if(sendBtn)sendBtn.disabled=true;
               modal.classList.add('show');modal.setAttribute('aria-hidden','false');
             }
           }
@@ -467,49 +509,100 @@ load({keep:false});setInterval(()=>load(),5000);
   });
 })();
 
-/* v1.8.2a — isolated text forwarding using the existing stable reply API. */
+/* v1.8.2c — multi-select forwarding with explicit Send button. */
 (function(){
   const modal=document.getElementById('waForwardModal');
   const list=document.getElementById('waForwardList');
   const cancel=document.getElementById('waForwardCancel');
   const closeX=document.getElementById('waForwardX');
+  const sendBtn=document.getElementById('waForwardSend');
+  const count=document.getElementById('waForwardCount');
+
+  function recipients(){
+    if(!(window.__waForwardRecipients instanceof Set)){
+      window.__waForwardRecipients=new Set();
+    }
+    return window.__waForwardRecipients;
+  }
+
+  function updateSelectionUi(){
+    const selected=recipients();
+    list?.querySelectorAll('.forward-recipient').forEach(btn=>{
+      const chosen=selected.has(btn.dataset.forwardPhone);
+      btn.classList.toggle('selected',chosen);
+      const box=btn.querySelector('.wa-forward-check');
+      if(box)box.textContent=chosen?'✓':'';
+    });
+    if(count)count.textContent=`${selected.size} selected`;
+    if(sendBtn)sendBtn.disabled=selected.size===0;
+  }
 
   function closeForward(){
     modal?.classList.remove('show');
     modal?.setAttribute('aria-hidden','true');
     window.__waForwardText='';
+    window.__waForwardRecipients=new Set();
+    updateSelectionUi();
   }
 
   cancel?.addEventListener('click',e=>{e.preventDefault();closeForward();});
   closeX?.addEventListener('click',e=>{e.preventDefault();closeForward();});
-  modal?.addEventListener('click',e=>{ if(e.target===modal) closeForward(); });
-  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&modal?.classList.contains('show'))closeForward();});
+  modal?.addEventListener('click',e=>{if(e.target===modal)closeForward();});
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'&&modal?.classList.contains('show'))closeForward();
+  });
 
-  list?.addEventListener('click',async e=>{
-    const btn=e.target.closest('button[data-forward-phone]');
+  list?.addEventListener('click',e=>{
+    const btn=e.target.closest('button.forward-recipient[data-forward-phone]');
     if(!btn)return;
     e.preventDefault();
     e.stopPropagation();
 
-    const text=String(window.__waForwardText||'').trim();
-    if(!text){ showToast('Nothing to forward'); closeForward(); return; }
+    const selected=recipients();
+    const phone=btn.dataset.forwardPhone;
+    if(selected.has(phone))selected.delete(phone);
+    else selected.add(phone);
 
-    const original=btn.innerHTML;
+    updateSelectionUi();
+  });
+
+  sendBtn?.addEventListener('click',async e=>{
+    e.preventDefault();
+
+    const text=String(window.__waForwardText||'').trim();
+    const phones=[...recipients()];
+
+    if(!text){
+      showToast('Nothing to forward');
+      return;
+    }
+    if(!phones.length){
+      showToast('Select at least one conversation');
+      return;
+    }
+
+    const original=sendBtn.textContent;
+    let sent=0;
     try{
-      btn.disabled=true;
-      btn.innerHTML='<strong>Forwarding...</strong>';
-      await postJson('/api/inbox/reply',{
-        phone:btn.dataset.forwardPhone,
-        message:text
-      });
+      sendBtn.disabled=true;
+      sendBtn.textContent=`Sending 0/${phones.length}`;
+
+      for(const phone of phones){
+        await postJson('/api/inbox/reply',{phone,message:text});
+        sent++;
+        sendBtn.textContent=`Sending ${sent}/${phones.length}`;
+      }
+
       closeForward();
-      showToast('Message forwarded');
+      showToast(sent===1?'Message forwarded':`Message forwarded to ${sent} conversations`);
       await load({keep:true});
     }catch(err){
-      btn.innerHTML=original;
-      showToast(err.message||'Could not forward');
+      showToast(sent
+        ? `Sent to ${sent}; then failed: ${err.message||'Could not forward'}`
+        : (err.message||'Could not forward'));
     }finally{
-      btn.disabled=false;
+      sendBtn.textContent=original;
+      updateSelectionUi();
     }
   });
 })();
@@ -522,8 +615,10 @@ load({keep:false});setInterval(()=>load(),5000);
       <button id="waForwardX" class="wa-forward-x" type="button" aria-label="Close">&times;</button>
     </div>
     <div id="waForwardList" class="wa-forward-list"></div>
-    <div class="wa-forward-footer">
+    <div class="wa-forward-actions">
+      <div id="waForwardCount" class="wa-forward-count">0 selected</div>
       <button id="waForwardCancel" class="send wa-forward-cancel" type="button">Cancel</button>
+      <button id="waForwardSend" class="send wa-forward-send" type="button" disabled>Send</button>
     </div>
   </div>
 </div>
