@@ -1666,6 +1666,63 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  /* Campaign preparation page: no bulk sends are enabled in this release. */
+  if (request.method === 'GET' && url.pathname === '/campaigns') {
+    if (!requireAuthentication(request, response)) return;
+    response.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff'
+    });
+    response.end(fs.readFileSync(path.join(__dirname, 'campaigns.html')));
+    return;
+  }
+
+  /* Explicit single-recipient test; no bulk API is exposed. */
+  if (request.method === 'POST' && url.pathname === '/api/campaigns/test') {
+    if (!requireAuthentication(request, response, true)) return;
+    try {
+      const body = JSON.parse(await readRequestBody(request, 4096));
+      const phone = String(body.phone || '').trim();
+      const name = String(body.name || '').trim();
+      if (!/^\+?[0-9]{10,15}$/.test(phone) || !name || name.length > 80 || /[<>\r\n]/.test(name)) {
+        sendJson(response, 400, {success:false,error:'Enter a valid test phone and patient name.'});
+        return;
+      }
+      if (body.confirm !== 'SEND_ONE_TEST') {
+        sendJson(response, 400, {success:false,error:'Explicit test confirmation required.'});
+        return;
+      }
+      if (!WA_TOKEN || !PHONE_NUMBER_ID) {
+        sendJson(response, 503, {success:false,error:'Meta WhatsApp environment variables are missing.'});
+        return;
+      }
+      const cleanPhone = normalizePhone(phone);
+      const payload = JSON.stringify({
+        messaging_product:'whatsapp',to:cleanPhone,type:'template',
+        template:{name:'dr_mina_review_request',language:{code:'en'},
+          components:[{type:'body',parameters:[{type:'text',text:name}]}]}
+      });
+      const result = await new Promise((resolve,reject)=>{
+        const req=https.request({hostname:'graph.facebook.com',path:`/${WA_API_VERSION}/${PHONE_NUMBER_ID}/messages`,method:'POST',headers:{Authorization:`Bearer ${WA_TOKEN}`,'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload)}},res=>{
+          let data='';res.on('data',chunk=>data+=chunk);
+          res.on('end',()=>{
+            let parsed;try{parsed=JSON.parse(data)}catch{parsed={}}
+            if(res.statusCode>=200 && res.statusCode<300)resolve(parsed);
+            else reject(new Error(parsed.error?.message || `Meta HTTP ${res.statusCode}`));
+          });
+        });
+        req.on('error',reject);req.setTimeout(15000,()=>req.destroy(new Error('Meta request timed out')));
+        req.end(payload);
+      });
+      sendJson(response,200,{success:true,accepted:true,messageId:result.messages?.[0]?.id || null,note:'Accepted by Meta; delivery not yet confirmed.'});
+    } catch(error) {
+      console.error('Campaign test failed:',error.message);
+      sendJson(response,400,{success:false,error:error.message});
+    }
+    return;
+  }
+
   /* Inbox message API */
 
   if (
