@@ -11,7 +11,7 @@
     *{box-sizing:border-box} html,body{width:100%;height:100%;overflow:hidden} body{margin:0;position:fixed;inset:0;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:var(--ink);background:#d9e5e1} button,input,textarea{font:inherit}
     .app{height:100vh;height:100dvh;min-height:0;overflow:hidden;display:grid;grid-template-columns:390px 1fr;max-width:1600px;margin:auto;background:#fff;box-shadow:var(--shadow)}
     .sidebar{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;border-right:1px solid var(--line);background:#fff}.side-head{padding:16px;border-bottom:1px solid var(--line);background:#f8fbfa}.brand-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.brand{display:flex;align-items:center;gap:11px}.logo{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:#dff5ef;font-size:23px}.brand h1{margin:0;font-size:19px}.brand small{color:var(--muted)}
-    .head-actions{display:flex;gap:7px}.icon-btn{width:38px;height:38px;border:1px solid var(--line);border-radius:11px;background:#fff;cursor:pointer;display:grid;place-items:center}.icon-btn:hover{background:var(--soft)}
+    .head-actions{display:flex;gap:7px;align-items:center}.bulk-nav-btn{width:auto;min-width:48px;padding:0 9px;text-decoration:none;color:var(--green);font-size:12px;font-weight:800}.new-chat-btn{font-size:24px;color:var(--green);font-weight:500}.brand{min-width:0}.brand h1{white-space:nowrap}@media(max-width:480px){.side-head{padding:10px}.brand h1{font-size:16px}.logo{width:34px;height:34px}.head-actions{gap:4px}.head-actions .icon-btn{height:34px}.logout-btn{min-width:58px;padding:0 5px;font-size:11px}}.icon-btn{width:38px;height:38px;border:1px solid var(--line);border-radius:11px;background:#fff;cursor:pointer;display:grid;place-items:center}.icon-btn:hover{background:var(--soft)}
     .search-wrap{margin-top:13px;display:flex;gap:8px}.search{flex:1;border:1px solid var(--line);border-radius:12px;padding:11px 13px;outline:none;background:#fff}.search:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(11,122,109,.1)}
     .filters{display:flex;gap:7px;margin-top:10px}.filter{border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 11px;font-size:12px;cursor:pointer}.filter.active{background:var(--green);color:white;border-color:var(--green)}
     .conversation-list{overflow:auto;flex:1;min-height:0;overscroll-behavior:contain}.conversation-item{width:100%;border:0;border-bottom:1px solid #eff3f2;background:#fff;padding:13px 14px;display:grid;grid-template-columns:50px minmax(0,1fr) auto;gap:11px;text-align:left;cursor:pointer;position:relative}.conversation-item:hover,.conversation-item.active{background:#f0f8f6}.conversation-item.unread .name{font-weight:850}.avatar{width:50px;height:50px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(145deg,#d9eee8,#c7e4dc);color:#086d61;font-weight:850}.conv-main{min-width:0}.conv-top{display:flex;justify-content:space-between;gap:10px}.name{font-weight:680;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.time{font-size:11px;color:var(--muted);white-space:nowrap}.conversation-item.unread .time{color:var(--green);font-weight:750}.preview{margin-top:5px;color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.conv-foot{display:flex;gap:6px;align-items:center;margin-top:6px}.rating{font-size:11px;background:#fff4cd;color:#815f00;border-radius:999px;padding:3px 7px}.unread-badge{min-width:21px;height:21px;border-radius:999px;background:#22c58b;color:white;display:grid;place-items:center;font-size:11px;font-weight:800;align-self:center}.menu-btn{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:0 5px;opacity:.18;display:flex;align-items:center;justify-content:center}.menu-dots{width:4px;height:4px;border-radius:50%;background:currentColor;box-shadow:0 -6px 0 currentColor,0 6px 0 currentColor}.conversation-item:hover .menu-btn{opacity:1}
@@ -188,7 +188,7 @@
 <main class="app" id="app">
   <aside class="sidebar">
     <div class="side-head">
-      <div class="brand-row"><div class="brand"><div class="logo">&#129463;</div><div><h1>Dr Mina Inbox</h1><small id="inboxSummary">WhatsApp conversations</small></div></div><div class="head-actions"><button class="icon-btn" id="notifyButton" title="Enable notifications">&#128276;</button><form method="POST" action="/logout"><button class="icon-btn logout-btn" title="Log out" aria-label="Log out"><span>Log out</span></button></form></div></div>
+      <div class="brand-row"><div class="brand"><div class="logo">&#129463;</div><div><h1>Dr Mina Inbox</h1><small id="inboxSummary">WhatsApp conversations</small></div></div><div class="head-actions"><a class="icon-btn bulk-nav-btn" href="/campaigns" title="Bulk campaigns" aria-label="Bulk campaigns">Bulk</a><button class="icon-btn new-chat-btn" id="newChatButton" type="button" title="New chat" aria-label="New chat">＋</button><button class="icon-btn" id="notifyButton" title="Enable notifications">&#128276;</button><form method="POST" action="/logout"><button class="icon-btn logout-btn" title="Log out" aria-label="Log out"><span>Log out</span></button></form></div></div>
       <div class="search-wrap"><input id="search" class="search" type="search" placeholder="Search name, phone or message"></div>
       <div class="filters"><button class="filter active" data-filter="all">All</button><button class="filter" data-filter="unread">Unread</button><button class="filter" data-filter="reviews">Reviews</button></div>
     </div>
@@ -211,6 +211,16 @@
     <button class="profile-save" id="profileSave" type="button">Save profile</button>
   </div>
 </aside>
+<div id="newChatModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="newChatTitle">
+  <form id="newChatForm" class="modal-card">
+    <h3 id="newChatTitle">New WhatsApp chat</h3>
+    <p>Enter a WhatsApp number. Existing inbox conversations open here. For a new number, use WhatsApp Web or an approved template through the business API.</p>
+    <label for="newChatPhone">Phone number (international format)</label>
+    <input id="newChatPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="9715XXXXXXXX" required maxlength="20">
+    <p id="newChatNotice" style="margin:12px 0 0" aria-live="polite"></p>
+    <div class="modal-actions"><button id="newChatCancel" type="button">Cancel</button><button class="save-name" type="submit">Continue</button></div>
+  </form>
+</div>
 <div id="nameModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="nameModalTitle">
   <form id="nameForm" class="modal-card">
     <h3 id="nameModalTitle">Patient name</h3>
@@ -401,6 +411,32 @@ composer.onsubmit=async e=>{e.preventDefault();const message=reply.value.trim(),
 reply.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();composer.requestSubmit()}};reply.oninput=()=>{reply.style.height='auto';reply.style.height=Math.min(reply.scrollHeight,150)+'px'};search.oninput=renderList;back.onclick=()=>{if(state.mediaRecorder)cancelVoiceRecording();app.classList.remove('chat-open');state.selectedPhone=null;renderList();chatPhone.textContent='Select a conversation';chatSubtitle.textContent='Messages will appear here';chatAvatar.textContent='?';editNameButton.classList.remove('visible');profileButton.classList.remove('visible');closeProfile();reply.value='';clearAttachments();reply.disabled=send.disabled=emojiButton.disabled=attachButton.disabled=true;micButton.disabled=true;msgBox.innerHTML='<div class="empty"><div style="font-size:48px;margin-bottom:10px">&#128172;</div>Select a patient from the inbox.</div>';window.scrollTo(0,0)};emojiButton.onclick=()=>emojiPanel.classList.toggle('open');attachButton.onclick=()=>attachmentInput.click();micButton.onclick=()=>{if(state.mediaRecorder&&state.mediaRecorder.state!=='inactive')stopVoiceRecording();else startVoiceRecording()};voiceRecordCancel.onclick=cancelVoiceRecording;attachmentInput.onchange=()=>addAttachments([...(attachmentInput.files||[])]);attachmentClear.onclick=clearAttachments;attachmentList.onclick=e=>{const button=e.target.closest('[data-remove-index]');if(button)removeAttachment(Number(button.dataset.removeIndex))};emojiGrid.onclick=e=>{if(e.target.classList.contains('emoji')){reply.value+=e.target.textContent;reply.focus()}};document.addEventListener('click',e=>{if(!emojiPanel.contains(e.target)&&e.target!==emojiButton)emojiPanel.classList.remove('open')});$('notifyButton').onclick=async()=>{if(!('Notification'in window)){showToast('Notifications not supported');return}const p=await Notification.requestPermission();showToast(p==='granted'?'Notifications enabled':'Notifications blocked')};document.querySelectorAll('.filter').forEach(b=>b.onclick=()=>{document.querySelectorAll('.filter').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.filter=b.dataset.filter;renderList()});
 msgBox.addEventListener('click',e=>{const image=e.target.closest('.media-image');if(image)openMediaViewer(image)});mediaViewerClose.onclick=closeMediaViewer;mediaViewer.onclick=e=>{if(e.target===mediaViewer)closeMediaViewer()};mediaZoomIn.onclick=()=>{viewerZoom=Math.min(4,viewerZoom+.25);mediaViewerImage.style.setProperty('--zoom',viewerZoom)};mediaZoomOut.onclick=()=>{viewerZoom=Math.max(.5,viewerZoom-.25);mediaViewerImage.style.setProperty('--zoom',viewerZoom)};mediaRotate.onclick=()=>{viewerRotation=(viewerRotation+90)%360;mediaViewerImage.style.setProperty('--rotation',viewerRotation+'deg')};
 profileButton.onclick=openProfile;profileClose.onclick=closeProfile;profileOverlay.onclick=closeProfile;profileTags.onclick=e=>{const b=e.target.closest('.tag-chip');if(b)b.classList.toggle('active')};profileSave.onclick=saveProfile;editNameButton.onclick=openNameModal;nameForm.onsubmit=savePatientName;cancelNameButton.onclick=closeNameModal;nameModal.onclick=e=>{if(e.target===nameModal)closeNameModal()};document.addEventListener('keydown',e=>{if(e.key==='Escape'&&nameModal.classList.contains('open'))closeNameModal()});
+
+
+// New-chat navigation: does not bypass Meta's 24-hour customer-service window.
+(function(){
+  const modal=$('newChatModal'), input=$('newChatPhone'), notice=$('newChatNotice');
+  const close=()=>{modal.classList.remove('open');notice.textContent='';const link=$('newChatWebLink');if(link)link.hidden=true;};
+  $('newChatButton').addEventListener('click',()=>{modal.classList.add('open');input.value='';notice.textContent='';input.focus();});
+  $('newChatCancel').addEventListener('click',close);
+  modal.addEventListener('click',e=>{if(e.target===modal)close();});
+  $('newChatForm').addEventListener('submit',e=>{
+    e.preventDefault();
+    let phone=input.value.replace(/[^0-9]/g,'');
+    if(phone.startsWith('00'))phone=phone.slice(2);
+    if(phone.startsWith('0')&&phone.length===10)phone='971'+phone.slice(1);
+    if(!/^[1-9][0-9]{7,14}$/.test(phone)){notice.textContent='Please enter a valid international number.';return;}
+    const existing=state.conversations.find(c=>String(c.phone).replace(/\D/g,'')===phone);
+    if(existing){close();select(existing.phone);return;}
+    notice.textContent='This number has no existing inbox conversation. To start a conversation, use WhatsApp Web (your personal WhatsApp account), or send an approved template through a properly configured business API workflow. This inbox cannot initiate a free-form business message to a new contact.';
+    let link=$('newChatWebLink');
+    if(!link){link=document.createElement('a');link.id='newChatWebLink';link.target='_blank';link.rel='noopener noreferrer';link.textContent='Open number in WhatsApp Web';link.style.cssText='display:inline-block;margin-top:10px;color:#0b7a6d;font-weight:700';notice.after(link);}
+    link.href='https://wa.me/'+phone;
+    link.hidden=false;
+  });
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&modal.classList.contains('open'))close();});
+})();
+
 load({keep:false});setInterval(()=>load(),5000);
 
 /* v1.8.1a: isolated Copy-only action. Message rendering/loading is untouched. */
