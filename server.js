@@ -1546,6 +1546,80 @@ async function updateWhatsAppStatuses(statuses) {
 }
 
 /* =========================================================
+   CAMPAIGN TRACKING (READ-ONLY; BULK SENDING DISABLED)
+========================================================= */
+
+async function getCampaignHistory(response, url) {
+  if (!supabase) {
+    sendJson(response, 503, { success: false, error: 'Supabase is not connected.' });
+    return;
+  }
+
+  const campaignId = url.searchParams.get('campaign_id');
+  if (campaignId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(campaignId)) {
+    sendJson(response, 400, { success: false, error: 'Invalid campaign ID.' });
+    return;
+  }
+
+  try {
+    if (campaignId) {
+      const { data, error } = await supabase
+        .from('review_campaign_recipients')
+        .select('id,campaign_id,phone,patient_names,file_numbers,consent_verified,status,whatsapp_message_id,error_message,created_at,attempted_at,updated_at')
+        .eq('campaign_id', campaignId)
+        .order('created_at', { ascending: true })
+        .limit(1000);
+      if (error) throw error;
+      sendJson(response, 200, { success: true, recipients: data || [] });
+    } else {
+      const { data, error } = await supabase
+        .from('review_campaigns')
+        .select('id,name,status,created_at,started_at,completed_at')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      sendJson(response, 200, { success: true, campaigns: data || [] });
+    }
+  } catch (error) {
+    console.error('Campaign history error:', error.message);
+    sendJson(response, 500, { success: false, error: 'Could not load campaign history.' });
+  }
+}
+
+// Meta may deliver webhook events out of order. Never downgrade a confirmed
+// delivered/read status, and never retry uncertain sends automatically.
+async function updateCampaignDeliveryStatuses(statuses) {
+  if (!supabase || !Array.isArray(statuses)) return;
+  const rank = { pending: 0, sending: 1, unknown: 1, accepted: 2, sent: 3, delivered: 4, read: 5 };
+  for (const item of statuses) {
+    const id = String(item?.id || '');
+    const status = String(item?.status || '');
+    if (!id || !['sent', 'delivered', 'read', 'failed'].includes(status)) continue;
+    try {
+      const { data: rows, error: lookupError } = await supabase
+        .from('review_campaign_recipients')
+        .select('id,status')
+        .eq('whatsapp_message_id', id)
+        .limit(1);
+      if (lookupError) throw lookupError;
+      const row = rows?.[0];
+      if (!row) continue;
+      if (row.status === 'read' || (status === 'failed' && ['delivered', 'read'].includes(row.status))) continue;
+      if (status !== 'failed' && (rank[row.status] ?? -1) >= rank[status]) continue;
+      const { error } = await supabase
+        .from('review_campaign_recipients')
+        .update({ status, updated_at: new Date().toISOString(),
+          ...(status === 'failed' ? { error_message: 'Meta reported delivery failure; inspect webhook logs.' } : {}) })
+        .eq('id', row.id)
+        .eq('status', row.status);
+      if (error) throw error;
+    } catch (error) {
+      console.error('Campaign delivery update error:', error.message);
+    }
+  }
+}
+
+/* =========================================================
    WEB SERVER
 ========================================================= */
 
@@ -1675,6 +1749,13 @@ const server = http.createServer(async (request, response) => {
       'X-Content-Type-Options': 'nosniff'
     });
     response.end(fs.readFileSync(path.join(__dirname, 'campaigns.html')));
+    return;
+  }
+
+  /* Authenticated campaign history; no bulk send endpoint exists. */
+  if (request.method === 'GET' && url.pathname === '/api/campaigns/history') {
+    if (!requireAuthentication(request, response, true)) return;
+    await getCampaignHistory(response, url);
     return;
   }
 
@@ -1885,6 +1966,7 @@ const server = http.createServer(async (request, response) => {
       const statuses = webhookValue?.statuses || [];
       if (statuses.length) {
         await updateWhatsAppStatuses(statuses);
+        await updateCampaignDeliveryStatuses(statuses);
       }
 
       const message = webhookValue?.messages?.[0];
