@@ -1698,6 +1698,33 @@ async function updateCampaignDeliveryStatuses(statuses) {
    WEB SERVER
 ========================================================= */
 
+/* =========================================================
+   CAMPAIGN RESERVATION LEDGER — READINESS CHECK ONLY
+   Bulk sending remains disabled. This does not reserve or send.
+========================================================= */
+async function getCampaignReservationReadiness(response) {
+  if (!supabase) {
+    sendJson(response, 503, { success: false, error: 'Supabase is not connected.' });
+    return;
+  }
+  try {
+    const { error } = await supabase
+      .from('patient_connect_send_reservations')
+      .select('id', { head: true, count: 'exact' })
+      .limit(1);
+    if (error) throw error;
+    sendJson(response, 200, {
+      success: true,
+      reservationLedger: 'accessible',
+      bulkSending: 'locked',
+      note: 'Database reachable. Duplicate enforcement requires atomic reservation before every future send.'
+    });
+  } catch (error) {
+    console.error('Reservation readiness error:', error.message);
+    sendJson(response, 503, { success: false, error: 'Reservation table is not accessible. Check Supabase SQL and server credentials.' });
+  }
+}
+
 const server = http.createServer(async (request, response) => {
   const url = new URL(
     request.url,
@@ -1824,6 +1851,13 @@ const server = http.createServer(async (request, response) => {
       'X-Content-Type-Options': 'nosniff'
     });
     response.end(fs.readFileSync(path.join(__dirname, 'campaigns.html')));
+    return;
+  }
+
+  /* Verify the reservation ledger exists. No contacts are written or sent. */
+  if (request.method === 'GET' && url.pathname === '/api/campaigns/reservations/check') {
+    if (!requireAuthentication(request, response, true)) return;
+    await getCampaignReservationReadiness(response);
     return;
   }
 
