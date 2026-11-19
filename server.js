@@ -1524,6 +1524,19 @@ async function markConversationRead(request, response) {
   }
 }
 
+// Delivery diagnostics: log the recipient and Meta's structured failure details.
+// Do not log message bodies, access tokens, or the complete webhook payload.
+function getWhatsAppDeliveryError(item) {
+  const errors = Array.isArray(item?.errors) ? item.errors : [];
+  if (!errors.length) return null;
+  return errors.map(error => ({
+    code: error.code ?? null,
+    title: String(error.title || '').slice(0, 200),
+    message: String(error.message || '').slice(0, 300),
+    detail: String(error.error_data?.details || '').slice(0, 400)
+  }));
+}
+
 async function updateWhatsAppStatuses(statuses) {
   if (!supabase || !Array.isArray(statuses)) return;
 
@@ -1531,6 +1544,15 @@ async function updateWhatsAppStatuses(statuses) {
     const id = item?.id;
     const status = item?.status;
     if (!id || !status) continue;
+
+    const recipient = normalizePhone(item.recipient_id);
+    const failureDetails = getWhatsAppDeliveryError(item);
+    console.log('WhatsApp delivery webhook:', JSON.stringify({
+      recipient: recipient ? `+${recipient}` : 'not supplied',
+      messageId: id,
+      status,
+      ...(failureDetails ? { errors: failureDetails } : {})
+    }));
 
     const { error } = await supabase
       .from('messages')
@@ -1609,7 +1631,7 @@ async function updateCampaignDeliveryStatuses(statuses) {
       const { error } = await supabase
         .from('review_campaign_recipients')
         .update({ status, updated_at: new Date().toISOString(),
-          ...(status === 'failed' ? { error_message: 'Meta reported delivery failure; inspect webhook logs.' } : {}) })
+          ...(status === 'failed' ? { error_message: (getWhatsAppDeliveryError(item)?.map(e => [e.code, e.title, e.detail || e.message].filter(Boolean).join(': ')).join(' | ') || 'Meta reported delivery failure; no error details supplied.').slice(0, 900) } : {}) })
         .eq('id', row.id)
         .eq('status', row.status);
       if (error) throw error;
