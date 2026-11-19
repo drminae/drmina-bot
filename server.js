@@ -1559,6 +1559,18 @@ async function updateWhatsAppStatuses(statuses) {
       .update({ status })
       .eq('whatsapp_message_id', id);
 
+    if (status === 'failed' && failureDetails?.length) {
+      const reason = failureDetails.map(e =>
+        `Meta ${e.code ?? 'error'}: ${e.title || e.message || e.detail || 'Delivery failed'}`
+      ).join('; ').slice(0, 700);
+      const { error: testError } = await supabase
+        .from('messages')
+        .update({ reply_message: reason })
+        .eq('whatsapp_message_id', id)
+        .eq('message', CAMPAIGN_TEST_MARKER);
+      if (testError) console.error('Test failure detail save error:', testError.message);
+    }
+
     if (error) {
       console.error('WhatsApp status update error:', error.message);
     } else {
@@ -1570,6 +1582,29 @@ async function updateWhatsAppStatuses(statuses) {
 /* =========================================================
    CAMPAIGN TRACKING (READ-ONLY; BULK SENDING DISABLED)
 ========================================================= */
+
+const CAMPAIGN_TEST_MARKER = '__PATIENT_CONNECT_SINGLE_TEMPLATE_TEST__:dr_mina_review_request';
+
+// Separate test-message history from real bulk campaign history.
+async function getCampaignTestHistory(response) {
+  if (!supabase) {
+    sendJson(response, 503, { success: false, error: 'Supabase is not connected.' });
+    return;
+  }
+  const { data, error } = await supabase
+    .from('messages')
+    .select('phone,status,whatsapp_message_id,reply_message,created_timestamp')
+    .eq('direction', 'outgoing')
+    .eq('message', CAMPAIGN_TEST_MARKER)
+    .order('created_timestamp', { ascending: false })
+    .limit(100);
+  if (error) {
+    console.error('Campaign test history error:', error.message);
+    sendJson(response, 500, { success: false, error: 'Could not load test history.' });
+    return;
+  }
+  sendJson(response, 200, { success: true, tests: data || [] });
+}
 
 async function getCampaignHistory(response, url) {
   if (!supabase) {
@@ -1781,6 +1816,13 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  /* Read-only history of individual template tests. */
+  if (request.method === 'GET' && url.pathname === '/api/campaigns/tests') {
+    if (!requireAuthentication(request, response, true)) return;
+    await getCampaignTestHistory(response);
+    return;
+  }
+
   /* Explicit single-recipient test; no bulk API is exposed. */
   if (request.method === 'POST' && url.pathname === '/api/campaigns/test') {
     if (!requireAuthentication(request, response, true)) return;
@@ -1818,7 +1860,17 @@ const server = http.createServer(async (request, response) => {
         req.on('error',reject);req.setTimeout(15000,()=>req.destroy(new Error('Meta request timed out')));
         req.end(payload);
       });
-      sendJson(response,200,{success:true,accepted:true,messageId:result.messages?.[0]?.id || null,note:'Accepted by Meta; delivery not yet confirmed.'});
+      const testMessageId = result.messages?.[0]?.id || null;
+      // Meta acceptance is not delivery. Save the accepted test for webhook tracking.
+      await saveMessageToSupabase({
+        phone: cleanPhone,
+        direction: 'outgoing',
+        message: CAMPAIGN_TEST_MARKER,
+        status: 'accepted',
+        whatsappMessageId: testMessageId,
+        isRead: true
+      });
+      sendJson(response,200,{success:true,accepted:true,messageId:testMessageId,note:'Accepted by Meta; delivery not yet confirmed.'});
     } catch(error) {
       console.error('Campaign test failed:',error.message);
       sendJson(response,400,{success:false,error:error.message});
