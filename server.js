@@ -1603,7 +1603,25 @@ async function getCampaignTestHistory(response) {
     sendJson(response, 500, { success: false, error: 'Could not load test history.' });
     return;
   }
-  sendJson(response, 200, { success: true, tests: data || [] });
+  // Reconcile legacy test rows where Meta's failure reason was saved but
+  // the status remained 'accepted' (for example, due to webhook timing).
+  // The failure reason is evidence of a failed delivery, not acceptance.
+  const tests = data || [];
+  for (const test of tests) {
+    if (test.status === 'accepted' && /^Meta \d+:/i.test(String(test.reply_message || ''))) {
+      test.status = 'failed';
+      if (test.whatsapp_message_id) {
+        const { error: repairError } = await supabase
+          .from('messages')
+          .update({ status: 'failed' })
+          .eq('whatsapp_message_id', test.whatsapp_message_id)
+          .eq('message', CAMPAIGN_TEST_MARKER)
+          .eq('status', 'accepted');
+        if (repairError) console.error('Test status reconciliation error:', repairError.message);
+      }
+    }
+  }
+  sendJson(response, 200, { success: true, tests });
 }
 
 async function getCampaignHistory(response, url) {
