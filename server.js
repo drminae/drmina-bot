@@ -1691,7 +1691,7 @@ const server = http.createServer(async (request, response) => {
         Location: '/inbox',
         'Set-Cookie':
           `drmina_session=${encodeURIComponent(token)}; ` +
-          'HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400',
+          'HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400',
         'Cache-Control': 'no-store'
       });
       response.end();
@@ -1711,7 +1711,7 @@ const server = http.createServer(async (request, response) => {
     response.writeHead(302, {
       Location: '/login',
       'Set-Cookie':
-        'drmina_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'
+        'drmina_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0'
     });
     response.end();
     return;
